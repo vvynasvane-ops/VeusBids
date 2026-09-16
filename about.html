@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<!-- Applies saved appearance (font, color, background) before first paint — must stay first, as a classic (non-module) script, to avoid a flash of default styling. -->
+<script src="appearance-core.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>About — VeusBid</title>
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#03010a">
+<meta name="description" content="VeusBid is a live online bidding platform — list an item, watch the bids roll in, and buy or sell with total transparency: current price, bid history, and time left, always visible.">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body data-mode="dark">
+  <div class="bubble-field" aria-hidden="true">
+    <span style="left:8%; width:16px; height:16px; animation-duration:6.5s;"></span>
+    <span style="left:22%; width:10px; height:10px; animation-duration:8s; animation-delay:1s;"></span>
+    <span style="left:71%; width:14px; height:14px; animation-duration:7s; animation-delay:.4s;"></span>
+    <span style="left:88%; width:9px; height:9px; animation-duration:9s; animation-delay:2s;"></span>
+  </div>
+  <div class="shell">
+    <div class="topbar">
+      <a class="brand" href="index.html" data-home-link style="cursor:pointer;">Veus<em>Bid</em></a>
+      <div class="mode-toggle">
+        <button data-mode-btn="dark">Dark</button>
+        <button data-mode-btn="light">Light</button>
+      </div>
+    </div>
+
+    <div class="legal-wrap">
+      <div class="legal-hero">
+        <div class="legal-glyph">⬡</div>
+        <div class="legal-eyebrow">Our Story</div>
+        <h1>About VeusBid</h1>
+        <p class="legal-tagline">A live online bidding platform, built so every auction is transparent — current price, bid history, and time left, always visible.</p>
+      </div>
+
+      <nav class="legal-nav">
+        <a href="index.html" data-home-link data-home-label>← Back home</a>
+        <a href="about.html" class="active">About</a>
+        <a href="contact.html">Contact</a>
+        <a href="terms.html">Terms</a>
+        <a href="privacy.html">Privacy</a>
+      </nav>
+
+      <div class="card legal-card">
+        <h2><span class="num">⬡</span> Why we built this</h2>
+        <p>
+          Most casual auction listings live in scattered chat groups and DMs — a screenshot of an item, a bid
+          shouted into a thread, no way to know if you actually have the highest offer until someone messages you
+          back. VeusBid puts the whole auction in one place instead: starting price, every bid as it lands, and a
+          live countdown, all visible to everyone watching. Nothing about a listing is locked behind a code or a
+          "message to unlock" gate.
+        </p>
+
+        <h2><span class="num">⬡</span> How it works</h2>
+        <p>
+          List an item with a starting price, an optional reserve, and a countdown length, and the auction goes
+          live immediately. Bidders place bids that must beat the current price by a minimum increment, the
+          countdown auto-extends by two minutes if a bid lands in the final stretch — so a last-second snipe never
+          quietly wins on the clock alone — and every bid is logged to a public history anyone can check. Watch
+          items worth a second look, get pinged the moment you're outbid or an auction you're watching is closing,
+          message the seller directly, and leave quick feedback once it's done.
+        </p>
+
+        <div class="about-values">
+          <div class="about-value-card">
+            <span class="glyph">◎</span>
+            <h3>Nothing hidden</h3>
+            <p>Starting price, current bid, full bid history, and every photo are public on every listing — no unlock codes, no gated details standing between you and a decision.</p>
+          </div>
+          <div class="about-value-card">
+            <span class="glyph">🛰</span>
+            <h3>Verified &amp; vigilant</h3>
+            <p>Block and Report are one tap away on every listing, and a real person reads every report that comes in.</p>
+          </div>
+          <div class="about-value-card">
+            <span class="glyph">⚡</span>
+            <h3>Fair by design</h3>
+            <p>Minimum bid increments and a two-minute anti-snipe extension keep the last thirty seconds honest instead of a race against page-refresh timing.</p>
+          </div>
+          <div class="about-value-card">
+            <span class="glyph">⬡</span>
+            <h3>Owned by the seller</h3>
+            <p>Anyone can list an item they own, edit it before the first bid lands, and see exactly how many bidders have viewed it.</p>
+          </div>
+        </div>
+
+        <h2><span class="num">⬡</span> Who's behind it</h2>
+        <p>
+          VeusBid is built and looked after by a small, independent team — the kind that reads its own
+          support inbox. If a listing looks off, something breaks, or the bidding experience could simply work
+          better, we want to hear about it.
+        </p>
+        <a href="contact.html" class="btn subtle block" style="margin-top:6px;">Get in touch</a>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { initTheme } from "./theme.js";
+    import { initLegalNav } from "./legal-nav.js";
+    initTheme();
+    initLegalNav();
+  </script>
+</body>
+</html>

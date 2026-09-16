@@ -1011,26 +1011,71 @@ textarea{ resize: vertical; min-height: 90px; }
 
 body{ padding-bottom: 0; }
 
+/* ---- mobile hamburger + off-canvas sidebar (renders via nav.js into
+   #veus-sidebar/#veus-sidebar-overlay, appended once to <body>) ----
+   On narrow screens the horizontal #nav-mount row is hidden outright
+   (see the @media block below) instead of turning into a second sticky
+   row or a fixed bottom bar — either of which, stacked under the sticky
+   .topbar, ate most of the visible viewport on phones. The nav items
+   live here instead, off-screen until the hamburger opens them. */
+.menu-btn{
+  display:none; flex-direction:column; justify-content:center; align-items:stretch;
+  gap:4px; width:34px; height:34px; padding:0; border:none; background:none;
+  cursor:pointer; flex-shrink:0;
+}
+.menu-btn span{
+  display:block; height:2px; border-radius:2px; background: var(--user-font-color);
+  transition: transform .25s ease, opacity .2s ease;
+}
+.menu-btn[aria-expanded="true"] span:nth-child(1){ transform: translateY(6px) rotate(45deg); }
+.menu-btn[aria-expanded="true"] span:nth-child(2){ opacity:0; }
+.menu-btn[aria-expanded="true"] span:nth-child(3){ transform: translateY(-6px) rotate(-45deg); }
+
+.veus-sidebar-overlay{
+  position:fixed; inset:0; z-index:290; background: rgba(2,1,8,.6); backdrop-filter: blur(2px);
+  opacity:0; pointer-events:none; transition: opacity .25s ease;
+}
+.veus-sidebar-overlay.open{ opacity:1; pointer-events:auto; }
+
+.veus-sidebar{
+  position:fixed; top:0; left:0; bottom:0; z-index:300;
+  width:78vw; max-width:300px;
+  background: var(--bg-raised); border-right:1px solid var(--line);
+  box-shadow: 12px 0 40px var(--shadow);
+  transform: translateX(-100%); transition: transform .28s ease;
+  display:flex; flex-direction:column;
+  padding-top: calc(18px + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+  overflow-y:auto;
+}
+.veus-sidebar.open{ transform: translateX(0); }
+.veus-sidebar-head{
+  display:flex; align-items:center; justify-content:space-between;
+  padding: 0 18px 16px; border-bottom:1px solid var(--line); margin-bottom:10px;
+}
+.veus-sidebar-brand{
+  font-family: var(--font-display); font-size:17px; font-weight:700;
+  letter-spacing:.04em; text-transform:uppercase; color: var(--user-font-color);
+}
+.veus-sidebar-brand em{ color: var(--accent); font-style:normal; }
+.veus-sidebar-close{
+  background:none; border:none; color: var(--text-muted); font-size:22px;
+  line-height:1; padding:4px 8px; cursor:pointer;
+}
+.veus-sidebar-close:hover{ color: var(--user-font-color); }
+.veus-sidebar-nav{ display:flex; flex-direction:column; gap:2px; padding: 0 10px; }
+.veus-sidebar-item{
+  display:flex; align-items:center; gap:12px; padding:13px 14px;
+  border-radius: var(--radius); color: var(--text-muted);
+  font-size:14px; font-weight:600;
+}
+.veus-sidebar-item:hover{ color: var(--user-font-color); background: var(--bg-inset); }
+.veus-sidebar-item.active{ background: var(--bg-inset); color: var(--accent); box-shadow: 0 0 0 1px hsl(var(--accent-h) var(--accent-s) var(--accent-l) / .3); }
+.veus-sidebar-foot{ margin-top:auto; padding: 14px 18px 0; border-top:1px solid var(--line); }
+
 @media (max-width: 720px){
-  /* env(safe-area-inset-bottom) accounts for the gesture bar on modern
-     Android phones (this app installs as a standalone PWA per manifest.json)
-     so the fixed nav — and the content scrolled behind it — never sits
-     under, or gets covered by, the system navigation area. Needs
-     viewport-fit=cover on the <meta name="viewport"> tag to take effect. */
-  body{ padding-bottom: calc(var(--nav-h) + 14px + env(safe-area-inset-bottom, 0px)); }
-  #nav-mount{
-    position: fixed; left:10px; right:10px; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); z-index: 80;
-    background: var(--bg-raised);
-    border: 1px solid var(--line);
-    border-radius: var(--radius-lg);
-    box-shadow: 0 -6px 26px var(--shadow), 0 0 0 1px hsl(var(--accent-h) var(--accent-s) var(--accent-l) / .12);
-  }
-  .appnav{ justify-content: space-between; padding: 6px 8px; height: var(--nav-h); }
-  .appnav-item{
-    flex-direction: column; gap:2px; flex:1;
-    padding: 6px 2px; border-radius: var(--radius-sm); text-align:center;
-  }
-  .appnav-label{ font-size:10px; }
+  #nav-mount{ display:none; }
+  .menu-btn{ display:flex; }
   .topbar .btn.ghost.small{ padding: 7px 12px; }
   .toast-root{ left:12px; right:12px; top:78px; max-width:none; }
 }

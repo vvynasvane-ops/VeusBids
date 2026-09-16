@@ -2,9 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<!-- Applies saved appearance (font, color, background) before first paint — must stay first, as a classic (non-module) script, to avoid a flash of default styling. -->
-<script src="appearance-core.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<!-- Applies saved appearance (font, color, background) before first paint — must stay first among *body-affecting* scripts, as a classic (non-module) script, to avoid a flash of default styling. Kept after charset+viewport so the browser commits to the mobile layout viewport before this blocking script runs, instead of briefly (or on some Android Chrome builds, persistently) treating the page as a non-mobile-optimized desktop-width page. -->
+<script src="appearance-core.js"></script>
 <title>VeusBid</title>
 <link rel="icon" href="favicon.ico" sizes="any">
 <link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png">

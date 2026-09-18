@@ -259,6 +259,42 @@ export function watchForOutbid(uid) {
 }
 
 // Kept live for the same reason as the watchers above.
+let soldWatcherArmed = false;
+const SEEN_SOLD_KEY = "vb-seen-sold";
+
+/**
+ * Live-watches items this member owns for one flipping from live to ended
+ * with a winning bid, and nudges them to reach out — a client-only app has
+ * no server-side cron to fire this the instant the clock actually hits
+ * zero, so it catches up next time the seller has any page open, same
+ * best-effort shape as the other watchers here.
+ */
+export function watchForSoldItems(uid) {
+  if (soldWatcherArmed) return;
+  soldWatcherArmed = true;
+
+  let seen;
+  try { seen = new Set(JSON.parse(localStorage.getItem(SEEN_SOLD_KEY)) || []); } catch { seen = new Set(); }
+
+  const q = query(collection(db, "items"), where("ownerUid", "==", uid));
+  onSnapshot(q, (snap) => {
+    snap.docs.forEach((d) => {
+      const data = d.data();
+      const id = d.id;
+      if (seen.has(id)) return;
+      if (!data.endTime || data.endTime > Date.now()) return; // still live
+      if (!data.currentBidderUid || !(data.bidCount > 0)) return; // ended with no winner
+      seen.add(id);
+      localStorage.setItem(SEEN_SOLD_KEY, JSON.stringify([...seen]));
+
+      const name = data.title || "your listing";
+      addNotification(uid, { title: `${name} sold to ${data.currentBidderName || "a bidder"} — message them for delivery details`, icon: "&#127942;", href: `item.html?id=${id}` });
+      showToast(`Sold: ${name} — reach out to arrange delivery`, { type: "match", duration: 4400 });
+    });
+  }, err => console.error("watchForSoldItems listener failed:", err));
+}
+
+// Kept live for the same reason as the watchers above.
 let endingSoonWatcherArmed = false;
 const SEEN_ENDING_KEY = "vb-seen-ending-soon";
 
@@ -305,6 +341,7 @@ export function initNotifications(uid, myPrefs, watchIds) {
   if (watchIds) watchForEndingSoon(uid, watchIds);
   watchForNewResponses(uid);
   watchForListingFeedback(uid);
+  watchForSoldItems(uid);
 }
 
 // Kept live for the same reason as the other watchers above.

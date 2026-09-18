@@ -32,7 +32,10 @@ const iCategoryEl = document.querySelector("#i-category");
 const iConditionEl = document.querySelector("#i-condition");
 const iStartPriceEl = document.querySelector("#i-start-price");
 const iReserveEl = document.querySelector("#i-reserve");
-const iDurationEl = document.querySelector("#i-duration");
+const durationField = document.querySelector("#duration-field");
+const iDurationValueEl = document.querySelector("#i-duration-value");
+const iDurationUnitEl = document.querySelector("#i-duration-unit");
+const durationHintEl = document.querySelector("#duration-hint");
 const iLocationEl = document.querySelector("#i-location");
 const iDescriptionEl = document.querySelector("#i-description");
 const iContactEl = document.querySelector("#i-contact");
@@ -47,6 +50,34 @@ iCategoryEl.innerHTML = CATEGORIES.map(c => `<option value="${escapeHtml(c)}">${
 iConditionEl.innerHTML = CONDITIONS.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
 
 let user, userRef, pendingPhotoURL = null, myListings = [], editingId = null, pendingPhotos = [];
+
+// ---- Auction length: typed number + unit, minutes by default ----
+// Minutes is the standard unit (matches how short, fast-moving auctions on
+// this platform actually run) — hours and days are there for longer listings.
+const UNIT_MS = { minutes: 60 * 1000, hours: 60 * 60 * 1000, days: 24 * 60 * 60 * 1000 };
+const MIN_DURATION_MS = 2 * 60 * 1000;   // below this the anti-snipe 2-minute extension (item.js) never stops re-triggering
+const MAX_DURATION_MS = 30 * 24 * 60 * 60 * 1000; // 30-day sanity cap
+
+function durationToMs() {
+  const unit = UNIT_MS[iDurationUnitEl.value] ? iDurationUnitEl.value : "minutes";
+  const n = Number(iDurationValueEl.value) || 0;
+  return Math.min(MAX_DURATION_MS, Math.max(MIN_DURATION_MS, n * UNIT_MS[unit]));
+}
+
+function formatDurationMs(ms) {
+  const mins = Math.round(ms / 60000);
+  if (mins < 60) return `${mins} minute${mins === 1 ? "" : "s"}`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs} hour${hrs === 1 ? "" : "s"}`;
+  const days = Math.round(hrs / 24);
+  return `${days} day${days === 1 ? "" : "s"}`;
+}
+
+function updateDurationHint() {
+  durationHintEl.textContent = `Ends about ${formatDurationMs(durationToMs())} after you publish.`;
+}
+iDurationValueEl.addEventListener("input", updateDurationHint);
+iDurationUnitEl.addEventListener("change", updateDurationHint);
 
 async function load() {
   user = await requireAuth();
@@ -112,10 +143,12 @@ function renderMyListings() {
           <span class="auction-bid-count">${it.bidCount || 0} bid${it.bidCount === 1 ? "" : "s"}</span>
         </div>
         <div class="person-sub">${it.viewCount || 0} view${it.viewCount === 1 ? "" : "s"} · Listing ${escapeHtml(it.code || "")}</div>
-        ${ended && hasBids ? `<div class="person-sub" style="color:var(--accent);">Won by ${escapeHtml(it.currentBidderName || "a bidder")}</div>` : ""}
+        ${ended && hasBids ? `<div class="person-sub" style="color:var(--accent);">Won by ${escapeHtml(it.currentBidderName || "a bidder")} · ${it.fulfilled ? "Delivered ✓" : "Awaiting delivery"}</div>` : ""}
         <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
           <a class="btn ghost small" href="item.html?id=${it.id}">View</a>
           ${!hasBids ? `<button type="button" class="btn ghost small" data-edit="${it.id}">Edit</button>` : ""}
+          ${!ended ? `<button type="button" class="btn ghost small" data-endnow="${it.id}">End now</button>` : ""}
+          ${ended && hasBids ? `<button type="button" class="btn ghost small" data-fulfill="${it.id}">${it.fulfilled ? "Mark undelivered" : "Mark delivered"}</button>` : ""}
           <button type="button" class="btn ghost small" data-delete="${it.id}">Delete</button>
         </div>
       </div>
@@ -123,6 +156,44 @@ function renderMyListings() {
   }).join("");
   myListingsGrid.querySelectorAll("[data-edit]").forEach(btn => btn.addEventListener("click", () => startEdit(btn.dataset.edit)));
   myListingsGrid.querySelectorAll("[data-delete]").forEach(btn => btn.addEventListener("click", () => deleteListing(btn.dataset.delete)));
+  myListingsGrid.querySelectorAll("[data-endnow]").forEach(btn => btn.addEventListener("click", () => endAuctionNow(btn.dataset.endnow)));
+  myListingsGrid.querySelectorAll("[data-fulfill]").forEach(btn => btn.addEventListener("click", () => toggleFulfilled(btn.dataset.fulfill)));
+}
+
+/** Closes bidding immediately — the seller's own equivalent of the clock
+ * running out. Handy for an item sold or settled outside the app, or a
+ * listing the seller just wants to stop early; the current highest bid (if
+ * any) still wins, same as a normal close. */
+async function endAuctionNow(id) {
+  const it = myListings.find(x => x.id === id);
+  const warn = (it?.bidCount || 0) > 0
+    ? `End "${it?.title || "this listing"}" right now? The current highest bid becomes the winning bid immediately.`
+    : `End "${it?.title || "this listing"}" right now with no bids? It'll close as unsold.`;
+  if (!confirm(warn)) return;
+  try {
+    await updateDoc(doc(db, "items", id), { endTime: Date.now() });
+    await loadMyListings(user.uid);
+    showToast("Auction ended.", { type: "success" });
+  } catch (err) {
+    console.error("End auction failed:", err);
+    showToast("Couldn't end that auction — try again.", { type: "error" });
+  }
+}
+
+/** Lets a seller track, for their own reference, which sold items have
+ * actually been handed off — separate from the buyer/seller chat itself, so
+ * "who still needs their item" doesn't get lost in a long list of sales. */
+async function toggleFulfilled(id) {
+  const it = myListings.find(x => x.id === id);
+  if (!it) return;
+  try {
+    await updateDoc(doc(db, "items", id), { fulfilled: !it.fulfilled });
+    await loadMyListings(user.uid);
+    showToast(it.fulfilled ? "Marked as awaiting delivery." : "Marked as delivered.", { type: "success" });
+  } catch (err) {
+    console.error("Couldn't update delivery status:", err);
+    showToast("Couldn't update that — try again.", { type: "error" });
+  }
 }
 
 function startCountdownTicker() {
@@ -253,7 +324,10 @@ function resetListingForm() {
   cancelEditBtn.style.display = "none";
   iTitleEl.value = ""; iStartPriceEl.value = ""; iReserveEl.value = ""; iLocationEl.value = "";
   iDescriptionEl.value = ""; iContactEl.value = ""; iCategoryEl.value = CATEGORIES[0]; iConditionEl.value = CONDITIONS[0];
-  iDurationEl.value = "3";
+  iDurationValueEl.value = "60";
+  iDurationUnitEl.value = "minutes";
+  durationField.style.display = "";
+  updateDurationHint();
   renderListingPhotos();
 }
 
@@ -274,21 +348,27 @@ function startEdit(id) {
   iLocationEl.value = it.location || "";
   iDescriptionEl.value = it.description || "";
   iContactEl.value = it.contact || "";
+  // The countdown itself can't be changed on a published listing (see the
+  // save handler below — endTime is only ever set on create), so hide the
+  // length picker while editing instead of showing a control that does
+  // nothing. Delete + relist is the path for "I want a different length."
+  durationField.style.display = "none";
   renderListingPhotos();
   document.querySelector("#listing-form-title").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 cancelEditBtn.addEventListener("click", resetListingForm);
-
-const DURATION_MS = { "1": 1, "3": 3, "5": 5, "7": 7, "10": 10, "14": 14 };
 
 saveListingBtn.addEventListener("click", async () => {
   const title = iTitleEl.value.trim();
   const startPrice = Number(iStartPriceEl.value);
   if (!title) { showToast("Give the item a title first.", { type: "error" }); return; }
   if (!startPrice || startPrice <= 0) { showToast("Set a starting price above $0.", { type: "error" }); return; }
+  if (!editingId && (!iDurationValueEl.value || Number(iDurationValueEl.value) <= 0)) {
+    showToast("Set an auction length greater than 0.", { type: "error" });
+    return;
+  }
   saveListingBtn.disabled = true;
   try {
-    const days = DURATION_MS[iDurationEl.value] || 3;
     const fields = {
       title,
       category: iCategoryEl.value,
@@ -304,6 +384,7 @@ saveListingBtn.addEventListener("click", async () => {
       await updateDoc(doc(db, "items", editingId), fields);
       showToast("Listing updated.", { type: "success" });
     } else {
+      const durationMs = durationToMs();
       await addDoc(collection(db, "items"), {
         ...fields,
         ownerUid: user.uid,
@@ -315,10 +396,11 @@ saveListingBtn.addEventListener("click", async () => {
         bidCount: 0,
         everBidUids: [],
         viewCount: 0,
-        endTime: Date.now() + days * 24 * 60 * 60 * 1000,
+        fulfilled: false,
+        endTime: Date.now() + durationMs,
         createdAt: Date.now()
       });
-      showToast(`Auction live — ${days}-day countdown started.`, { type: "success" });
+      showToast(`Auction live — ends in about ${formatDurationMs(durationMs)}.`, { type: "success" });
     }
     resetListingForm();
     await loadMyListings(user.uid);

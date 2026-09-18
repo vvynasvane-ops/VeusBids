@@ -21,7 +21,7 @@ const logoutBtn = document.querySelector("#logout-btn");
 
 const itemId = new URLSearchParams(window.location.search).get("id");
 
-let me, myData, item, owner = {}, activeGallery = 0, bidsUnsub = null, itemUnsub = null;
+let me, myData, item, owner = {}, winner = {}, activeGallery = 0, bidsUnsub = null, itemUnsub = null;
 
 /** The bump required above the current price — bigger increments at higher
  * price points, same shape auction houses actually use, so a $6 bid can't
@@ -64,6 +64,14 @@ async function load() {
 
   const ownerSnap = await getDoc(doc(db, "users", item.ownerUid)).catch(() => null);
   owner = ownerSnap?.data() || {};
+
+  // Fetch the winner's profile up front (for the seller-side chat header)
+  // whenever there is one to message — cheap, and avoids a second async
+  // hop inside render() every time the live listener repaints this page.
+  if (item.ownerUid === me.uid && isEnded(item) && item.currentBidderUid) {
+    const winnerSnap = await getDoc(doc(db, "users", item.currentBidderUid)).catch(() => null);
+    winner = winnerSnap?.data() || {};
+  }
 
   render();
   initNotifications(me.uid, myData.preferences, myData.savedItems || []);
@@ -117,6 +125,7 @@ function render() {
 
           ${isOwner ? `
             <p class="muted" style="font-size:13px; margin-top:10px;">This is your listing — manage it from <a href="listings.html">My Listings</a>.</p>
+            ${ended && item.fulfilled ? `<p class="muted" style="font-size:12px; color:var(--accent);">Delivered ✓</p>` : ""}
           ` : ended ? `
             <p class="muted" style="font-size:13px; margin-top:10px;">
               ${item.bidCount ? (iWon ? "&#127942; You won this auction! Message the seller to arrange payment/pickup." : `Sold to ${escapeHtml(item.currentBidderName || "another bidder")}.`) : "This auction closed with no bids."}
@@ -139,6 +148,11 @@ function render() {
           <div class="gilt-rule"></div>
           <h3>Message the seller</h3>
           <div id="chat-mount"></div>
+          ${iWon ? `
+            <div style="margin-top:10px;">
+              <button type="button" id="share-contact-btn" class="btn subtle small">&#128231; Share my delivery details</button>
+            </div>
+          ` : ""}
 
           <div class="gilt-rule"></div>
           <div style="display:flex; gap:10px;">
@@ -146,6 +160,15 @@ function render() {
             <button id="report-btn" class="btn ghost small" type="button">Report listing</button>
           </div>
           <p id="safety-note" class="muted" style="font-size:12px; margin-top:6px;"></p>
+        ` : (ended && (item.bidCount || 0) > 0 && item.currentBidderUid) ? `
+          <div class="gilt-rule"></div>
+          <h3>Message the winner</h3>
+          <p class="muted" style="font-size:13px;">Reach out to ${escapeHtml(item.currentBidderName || "the winner")} to arrange payment and delivery.</p>
+          <div id="chat-mount"></div>
+          <div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap;">
+            <button type="button" id="request-contact-btn" class="btn subtle small">&#128231; Request delivery details</button>
+            <button type="button" id="mark-fulfilled-btn" class="btn ghost small">${item.fulfilled ? "Mark undelivered" : "Mark as delivered"}</button>
+          </div>
         ` : ""}
       </div>
     </div>`;
@@ -199,7 +222,43 @@ function wireDetailEvents(isOwner, ended) {
     });
 
     openChat(document.querySelector("#chat-mount"), me.uid, item.ownerUid, { name: owner.name, photoURL: owner.photoURL });
+
+    document.querySelector("#share-contact-btn")?.addEventListener("click", () => {
+      insertChatTemplate(
+        `Hi! Thanks for the win \u{1F389} Here are my delivery details:\nName: \nPhone: \nAddress / pickup area: \nBest time to reach me: `
+      );
+    });
+  } else if (ended && (item.bidCount || 0) > 0 && item.currentBidderUid) {
+    openChat(document.querySelector("#chat-mount"), me.uid, item.currentBidderUid, { name: item.currentBidderName, photoURL: winner.photoURL });
+
+    document.querySelector("#request-contact-btn")?.addEventListener("click", () => {
+      insertChatTemplate(
+        `Hi! Congrats on winning "${item.title || "the item"}" for ${formatMoney(item.currentBid || item.startingPrice)}. Could you send me your delivery details — full name, phone number, and address (or preferred pickup spot) — so I can get this to you?`
+      );
+    });
+
+    document.querySelector("#mark-fulfilled-btn")?.addEventListener("click", async () => {
+      try {
+        await updateDoc(doc(db, "items", itemId), { fulfilled: !item.fulfilled });
+        showToast(item.fulfilled ? "Marked as awaiting delivery." : "Marked as delivered.", { type: "success" });
+      } catch (err) {
+        console.error("Couldn't update delivery status:", err);
+        showToast("Couldn't update that — try again.", { type: "error" });
+      }
+    });
   }
+}
+
+/** Fills the open chat's compose box with a starting draft and focuses it —
+ * the person still reviews/edits and hits Send themselves, nothing goes out
+ * automatically. Dispatching "input" keeps chat.js's own listeners (autoGrow,
+ * the Send button's disabled state) in sync with the programmatic fill. */
+function insertChatTemplate(text) {
+  const input = document.querySelector("#chat-text");
+  if (!input) return;
+  input.value = text;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.focus();
 }
 
 async function toggleSave() {
@@ -290,12 +349,16 @@ function renderBidHistory(bids) {
 /** Live-watches the item doc (price/bidder/countdown updates from anyone
  * bidding) and the bid history subcollection, for as long as this page is open. */
 function watchLive() {
-  itemUnsub = onSnapshot(doc(db, "items", itemId), (snap) => {
+  itemUnsub = onSnapshot(doc(db, "items", itemId), async (snap) => {
     if (!snap.exists()) return;
     const prevBidder = item.currentBidderUid;
     item = { id: snap.id, ...snap.data() };
     if (prevBidder === me.uid && item.currentBidderUid && item.currentBidderUid !== me.uid) {
       showToast(`Outbid! New price: ${formatMoney(item.currentBid)}`, { type: "outbid", duration: 5000 });
+    }
+    if (item.ownerUid === me.uid && isEnded(item) && item.currentBidderUid && item.currentBidderUid !== prevBidder) {
+      const winnerSnap = await getDoc(doc(db, "users", item.currentBidderUid)).catch(() => null);
+      winner = winnerSnap?.data() || {};
     }
     render();
   });

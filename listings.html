@@ -95,16 +95,17 @@
               <label for="i-reserve">Reserve price ($, optional)</label>
               <input id="i-reserve" type="number" min="0" step="1" placeholder="Minimum you'll accept">
             </div>
-            <div>
-              <label for="i-duration">Auction length</label>
-              <select id="i-duration">
-                <option value="1">1 day</option>
-                <option value="3" selected>3 days</option>
-                <option value="5">5 days</option>
-                <option value="7">7 days</option>
-                <option value="10">10 days</option>
-                <option value="14">14 days</option>
-              </select>
+            <div id="duration-field">
+              <label for="i-duration-value">Auction length</label>
+              <div style="display:flex; gap:8px;">
+                <input id="i-duration-value" type="number" min="1" step="1" value="60" style="flex:1;">
+                <select id="i-duration-unit" style="flex:1;">
+                  <option value="minutes" selected>Minutes</option>
+                  <option value="hours">Hours</option>
+                  <option value="days">Days</option>
+                </select>
+              </div>
+              <p class="field-hint" id="duration-hint"></p>
             </div>
             <div>
               <label for="i-location">Item location</label>

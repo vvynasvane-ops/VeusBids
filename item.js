@@ -82,6 +82,15 @@ async function load() {
 function isSaved() { return (myData.savedItems || []).includes(itemId); }
 
 function render() {
+  // A re-render tears down and rebuilds the chat panel (openChat() replaces
+  // its whole mount point), which would otherwise silently wipe out
+  // whatever the person was mid-typing. Snapshot it here and restore it
+  // after the rebuild below, so a legitimate update (a new bid, marking an
+  // item delivered) never costs someone their draft or their cursor.
+  const chatInput = document.querySelector("#chat-text");
+  const draftText = chatInput?.value || "";
+  const hadFocus = document.activeElement === chatInput;
+
   const ended = isEnded(item);
   const current = item.currentBid || item.startingPrice || 0;
   const photos = (item.photos && item.photos.length ? item.photos : [placeholderPhoto()]);
@@ -174,6 +183,18 @@ function render() {
     </div>`;
 
   wireDetailEvents(isOwner, ended);
+
+  if (draftText) {
+    const newInput = document.querySelector("#chat-text");
+    if (newInput) {
+      newInput.value = draftText;
+      newInput.dispatchEvent(new Event("input", { bubbles: true }));
+      if (hadFocus) {
+        newInput.focus();
+        newInput.setSelectionRange(draftText.length, draftText.length);
+      }
+    }
+  }
 }
 
 function wireDetailEvents(isOwner, ended) {
@@ -348,10 +369,21 @@ function renderBidHistory(bids) {
 
 /** Live-watches the item doc (price/bidder/countdown updates from anyone
  * bidding) and the bid history subcollection, for as long as this page is open. */
+/** Fields that actually change what render() draws. viewCount is
+ * deliberately excluded — it isn't shown anywhere on this page, so a
+ * bystander's view (including the winner opening this same page to reply)
+ * shouldn't be a reason to tear down and rebuild the whole page, chat panel
+ * included, out from under someone who's mid-message. */
+function relevantSnapshot(data) {
+  const { viewCount, ...rest } = data;
+  return rest;
+}
+
 function watchLive() {
   itemUnsub = onSnapshot(doc(db, "items", itemId), async (snap) => {
     if (!snap.exists()) return;
     const prevBidder = item.currentBidderUid;
+    const prevSignature = JSON.stringify(relevantSnapshot(item));
     item = { id: snap.id, ...snap.data() };
     if (prevBidder === me.uid && item.currentBidderUid && item.currentBidderUid !== me.uid) {
       showToast(`Outbid! New price: ${formatMoney(item.currentBid)}`, { type: "outbid", duration: 5000 });
@@ -360,6 +392,7 @@ function watchLive() {
       const winnerSnap = await getDoc(doc(db, "users", item.currentBidderUid)).catch(() => null);
       winner = winnerSnap?.data() || {};
     }
+    if (JSON.stringify(relevantSnapshot(item)) === prevSignature) return; // nothing rendered actually changed — leave the DOM (and any in-progress chat draft) alone
     render();
   });
   bidsUnsub = onSnapshot(query(collection(db, "items", itemId, "bids"), orderBy("at", "desc"), limit(20)), (snap) => {

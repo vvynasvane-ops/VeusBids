@@ -23,6 +23,16 @@ const itemId = new URLSearchParams(window.location.search).get("id");
 
 let me, myData, item, owner = {}, winner = {}, activeGallery = 0, bidsUnsub = null, itemUnsub = null;
 
+// The page used to be one big innerHTML template, fully rebuilt on every
+// live Firestore update — which tore down (and silently reset) the chat
+// panel, the bid form, even the gallery, every time *anything* about the
+// item changed remotely. Below, the static parts of the page are built
+// once (renderShell) and only the small pieces that actually need to
+// change get touched afterward — so a live price/bid update can't disrupt
+// someone who's mid-message or mid-bid elsewhere on the page.
+let shellBuilt = false;
+let lastMessagingSignature = null;
+
 /** The bump required above the current price — bigger increments at higher
  * price points, same shape auction houses actually use, so a $6 bid can't
  * follow a $50,000 one. */
@@ -81,23 +91,23 @@ async function load() {
 
 function isSaved() { return (myData.savedItems || []).includes(itemId); }
 
+/** Top-level entry point: builds the static shell once, then refreshes
+ * only the auction panel and (when it actually needs to change) the
+ * messaging section. Bid history is updated independently by its own
+ * listener and never touched here. */
 function render() {
-  // A re-render tears down and rebuilds the chat panel (openChat() replaces
-  // its whole mount point), which would otherwise silently wipe out
-  // whatever the person was mid-typing. Snapshot it here and restore it
-  // after the rebuild below, so a legitimate update (a new bid, marking an
-  // item delivered) never costs someone their draft or their cursor.
-  const chatInput = document.querySelector("#chat-text");
-  const draftText = chatInput?.value || "";
-  const hadFocus = document.activeElement === chatInput;
+  if (!shellBuilt) {
+    renderShell();
+    shellBuilt = true;
+  }
+  updateAuctionPanel();
+  updateMessagingSection();
+}
 
-  const ended = isEnded(item);
-  const current = item.currentBid || item.startingPrice || 0;
+function renderShell() {
   const photos = (item.photos && item.photos.length ? item.photos : [placeholderPhoto()]);
   const activity = owner.showOnlineStatus !== false ? activityLabel(owner.lastActive) : "";
   const isOwner = item.ownerUid === me.uid;
-  const iWon = ended && item.currentBidderUid === me.uid && (item.bidCount || 0) > 0;
-  const iLost = ended && !isOwner && item.currentBidderUid && item.currentBidderUid !== me.uid;
 
   root.innerHTML = `
     <div class="detail-wrap">
@@ -124,82 +134,21 @@ function render() {
       </div>
 
       <div>
-        <div class="card auction-panel ${isEndingSoon(item.endTime) && !ended ? "urgent" : ""}">
-          <div class="auction-panel-label">${ended ? (item.bidCount ? "WINNING BID" : "CURRENT PRICE") : "CURRENT BID"}</div>
-          <div class="auction-panel-price">${formatMoney(current)}</div>
-          <div class="auction-panel-meta">
-            <span>${item.bidCount || 0} bid${item.bidCount === 1 ? "" : "s"}</span>
-            <span id="item-countdown" class="${ended ? "ended-txt" : isEndingSoon(item.endTime) ? "urgent-txt" : ""}">${ended ? "AUCTION ENDED" : timeLeftLabel(item.endTime).toUpperCase()}</span>
-          </div>
-
-          ${isOwner ? `
-            <p class="muted" style="font-size:13px; margin-top:10px;">This is your listing — manage it from <a href="listings.html">My Listings</a>.</p>
-            ${ended && item.fulfilled ? `<p class="muted" style="font-size:12px; color:var(--accent);">Delivered ✓</p>` : ""}
-          ` : ended ? `
-            <p class="muted" style="font-size:13px; margin-top:10px;">
-              ${item.bidCount ? (iWon ? "&#127942; You won this auction! Message the seller to arrange payment/pickup." : `Sold to ${escapeHtml(item.currentBidderName || "another bidder")}.`) : "This auction closed with no bids."}
-            </p>
-          ` : `
-            <form id="bid-form" style="margin-top:14px;">
-              <label for="bid-amount">Your bid (min ${formatMoney(minNextBid(item))})</label>
-              <input id="bid-amount" type="number" min="${minNextBid(item)}" step="1" placeholder="${minNextBid(item)}">
-              <button type="submit" class="btn block" style="margin-top:10px;">${item.bidCount ? "Place bid" : "Bid now — be the first"}</button>
-            </form>
-            ${item.reservePrice ? `<p class="field-hint">Reserve price ${current >= item.reservePrice ? "met" : "not yet met"}.</p>` : ""}
-          `}
-        </div>
+        <div id="auction-panel-mount"></div>
 
         <div class="gilt-rule"></div>
         <h3>Bid history</h3>
         <div id="bid-history"></div>
 
-        ${!isOwner ? `
-          <div class="gilt-rule"></div>
-          <h3>Message the seller</h3>
-          <div id="chat-mount"></div>
-          ${iWon ? `
-            <div style="margin-top:10px;">
-              <button type="button" id="share-contact-btn" class="btn subtle small">&#128231; Share my delivery details</button>
-            </div>
-          ` : ""}
-
-          <div class="gilt-rule"></div>
-          <div style="display:flex; gap:10px;">
-            <button id="block-btn" class="btn ghost small" type="button">Block seller</button>
-            <button id="report-btn" class="btn ghost small" type="button">Report listing</button>
-          </div>
-          <p id="safety-note" class="muted" style="font-size:12px; margin-top:6px;"></p>
-        ` : (ended && (item.bidCount || 0) > 0 && item.currentBidderUid) ? `
-          <div class="gilt-rule"></div>
-          <h3>Message the winner</h3>
-          <p class="muted" style="font-size:13px;">Reach out to ${escapeHtml(item.currentBidderName || "the winner")} to arrange payment and delivery.</p>
-          <div id="chat-mount"></div>
-          <div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap;">
-            <button type="button" id="request-contact-btn" class="btn subtle small">&#128231; Request delivery details</button>
-            <button type="button" id="mark-fulfilled-btn" class="btn ghost small">${item.fulfilled ? "Mark undelivered" : "Mark as delivered"}</button>
-          </div>
-        ` : ""}
+        <div id="messaging-section"></div>
       </div>
     </div>`;
 
-  wireDetailEvents(isOwner, ended);
-
-  if (draftText) {
-    const newInput = document.querySelector("#chat-text");
-    if (newInput) {
-      newInput.value = draftText;
-      newInput.dispatchEvent(new Event("input", { bubbles: true }));
-      if (hadFocus) {
-        newInput.focus();
-        newInput.setSelectionRange(draftText.length, draftText.length);
-      }
-    }
-  }
-}
-
-function wireDetailEvents(isOwner, ended) {
+  // Photos and description don't change once published, so these listeners
+  // are wired exactly once — no more resetting the gallery's active index
+  // or the feedback picker's open/closed state on every live update.
   document.querySelectorAll("#gallery-strip img").forEach(img => {
-    img.addEventListener("click", () => { activeGallery = Number(img.dataset.idx); render(); });
+    img.addEventListener("click", () => { activeGallery = Number(img.dataset.idx); updateGallery(); });
   });
 
   if (!isOwner) {
@@ -218,12 +167,131 @@ function wireDetailEvents(isOwner, ended) {
       });
     }
   });
+}
+
+/** Updates just the main image + strip highlighting — no full re-render, so
+ * flipping through photos never disturbs anything else on the page. */
+function updateGallery() {
+  const photos = (item.photos && item.photos.length ? item.photos : [placeholderPhoto()]);
+  const main = document.querySelector("#gallery-main");
+  if (main) main.src = photos[activeGallery] || photos[0];
+  document.querySelectorAll("#gallery-strip img").forEach(img => {
+    img.style.outline = Number(img.dataset.idx) === activeGallery ? "2px solid var(--accent)" : "";
+  });
+}
+
+/** Patches just the like/watch button's state — avoids a full render (and
+ * the chat/bid-form churn that would come with one) for a single icon flip. */
+function updateLikeButton() {
+  const btn = document.querySelector("#detail-like-btn");
+  if (!btn) return;
+  const saved = isSaved();
+  btn.className = `like-btn ${saved ? "liked" : ""}`;
+  btn.title = saved ? "Remove from Watchlist" : "Watch";
+  btn.innerHTML = saved ? "&#10084;" : "&#9825;";
+}
+
+/** Rebuilds the price/countdown/bid-form card. This is the one piece that
+ * legitimately needs fresh markup on nearly every live update (a new bid
+ * changes the price, the bid count, and the minimum next bid) — so, same
+ * spirit as the chat draft below, any bid amount someone's mid-typing is
+ * preserved across the rebuild instead of silently vanishing. */
+function updateAuctionPanel() {
+  const mount = document.querySelector("#auction-panel-mount");
+  if (!mount) return;
+
+  const bidInput = document.querySelector("#bid-amount");
+  const draftBid = bidInput?.value || "";
+  const hadFocus = document.activeElement === bidInput;
+
+  const ended = isEnded(item);
+  const current = item.currentBid || item.startingPrice || 0;
+  const isOwner = item.ownerUid === me.uid;
+  const iWon = ended && item.currentBidderUid === me.uid && (item.bidCount || 0) > 0;
+
+  mount.innerHTML = `
+    <div class="card auction-panel ${isEndingSoon(item.endTime) && !ended ? "urgent" : ""}">
+      <div class="auction-panel-label">${ended ? (item.bidCount ? "WINNING BID" : "CURRENT PRICE") : "CURRENT BID"}</div>
+      <div class="auction-panel-price">${formatMoney(current)}</div>
+      <div class="auction-panel-meta">
+        <span>${item.bidCount || 0} bid${item.bidCount === 1 ? "" : "s"}</span>
+        <span id="item-countdown" class="${ended ? "ended-txt" : isEndingSoon(item.endTime) ? "urgent-txt" : ""}">${ended ? "AUCTION ENDED" : timeLeftLabel(item.endTime).toUpperCase()}</span>
+      </div>
+
+      ${isOwner ? `
+        <p class="muted" style="font-size:13px; margin-top:10px;">This is your listing — manage it from <a href="listings.html">My Listings</a>.</p>
+        ${ended && item.fulfilled ? `<p class="muted" style="font-size:12px; color:var(--accent);">Delivered &#10003;</p>` : ""}
+      ` : ended ? `
+        <p class="muted" style="font-size:13px; margin-top:10px;">
+          ${item.bidCount ? (iWon ? "&#127942; You won this auction! Message the seller to arrange payment/pickup." : `Sold to ${escapeHtml(item.currentBidderName || "another bidder")}.`) : "This auction closed with no bids."}
+        </p>
+      ` : `
+        <form id="bid-form" style="margin-top:14px;">
+          <label for="bid-amount">Your bid (min ${formatMoney(minNextBid(item))})</label>
+          <input id="bid-amount" type="number" min="${minNextBid(item)}" step="1" placeholder="${minNextBid(item)}">
+          <button type="submit" class="btn block" style="margin-top:10px;">${item.bidCount ? "Place bid" : "Bid now — be the first"}</button>
+        </form>
+        ${item.reservePrice ? `<p class="field-hint">Reserve price ${current >= item.reservePrice ? "met" : "not yet met"}.</p>` : ""}
+      `}
+    </div>`;
 
   const bidForm = document.querySelector("#bid-form");
   if (bidForm) bidForm.addEventListener("submit", onPlaceBid);
 
+  if (draftBid) {
+    const newBidInput = document.querySelector("#bid-amount");
+    if (newBidInput) {
+      newBidInput.value = draftBid;
+      if (hadFocus) {
+        newBidInput.focus();
+        newBidInput.setSelectionRange(draftBid.length, draftBid.length);
+      }
+    }
+  }
+}
+
+/** Rebuilds the messaging section — and, critically, only actually rebuilds
+ * it (tearing down and remounting the chat panel) when the "shape" of who's
+ * being messaged genuinely changes: buyer-to-seller vs. seller-to-winner,
+ * or which winner. Everything else (a price tick, a view count bump, the
+ * seller toggling delivered) leaves this whole section — chat included —
+ * completely untouched, so nobody mid-conversation ever sees it reset. */
+function updateMessagingSection() {
+  const mount = document.querySelector("#messaging-section");
+  if (!mount) return;
+
+  const isOwner = item.ownerUid === me.uid;
+  const ended = isEnded(item);
+  const iWon = ended && item.currentBidderUid === me.uid && (item.bidCount || 0) > 0;
+  const showSellerWinnerChat = isOwner && ended && (item.bidCount || 0) > 0 && !!item.currentBidderUid;
+
+  const signature = isOwner
+    ? (showSellerWinnerChat ? `owner:${item.currentBidderUid}` : "owner:none")
+    : `buyer:${item.ownerUid}`;
+
+  if (signature === lastMessagingSignature) {
+    updateFulfilledButton();
+    return;
+  }
+  lastMessagingSignature = signature;
+
   if (!isOwner) {
-    document.querySelector("#block-btn")?.addEventListener("click", async () => {
+    mount.innerHTML = `
+      <div class="gilt-rule"></div>
+      <h3>Message the seller</h3>
+      <div id="chat-mount"></div>
+      <div id="share-contact-wrap" style="margin-top:10px; display:${iWon ? "block" : "none"};">
+        <button type="button" id="share-contact-btn" class="btn subtle small">&#128231; Share my delivery details</button>
+      </div>
+
+      <div class="gilt-rule"></div>
+      <div style="display:flex; gap:10px;">
+        <button id="block-btn" class="btn ghost small" type="button">Block seller</button>
+        <button id="report-btn" class="btn ghost small" type="button">Report listing</button>
+      </div>
+      <p id="safety-note" class="muted" style="font-size:12px; margin-top:6px;"></p>`;
+
+    document.querySelector("#block-btn").addEventListener("click", async () => {
       if (!confirm("Block this seller? You won't see their listings in Browse anymore.")) return;
       await updateDoc(doc(db, "users", me.uid), { blockedUsers: arrayUnion(item.ownerUid) });
       closeChat();
@@ -231,7 +299,7 @@ function wireDetailEvents(isOwner, ended) {
       window.location.href = "browse.html";
     });
 
-    document.querySelector("#report-btn")?.addEventListener("click", async () => {
+    document.querySelector("#report-btn").addEventListener("click", async () => {
       const reason = prompt("What's the issue with this listing? (a short reason helps us review it)");
       if (reason === null) return;
       await addDoc(collection(db, "reports"), {
@@ -244,21 +312,31 @@ function wireDetailEvents(isOwner, ended) {
 
     openChat(document.querySelector("#chat-mount"), me.uid, item.ownerUid, { name: owner.name, photoURL: owner.photoURL });
 
-    document.querySelector("#share-contact-btn")?.addEventListener("click", () => {
+    document.querySelector("#share-contact-btn").addEventListener("click", () => {
       insertChatTemplate(
         `Hi! Thanks for the win \u{1F389} Here are my delivery details:\nName: \nPhone: \nAddress / pickup area: \nBest time to reach me: `
       );
     });
-  } else if (ended && (item.bidCount || 0) > 0 && item.currentBidderUid) {
+  } else if (showSellerWinnerChat) {
+    mount.innerHTML = `
+      <div class="gilt-rule"></div>
+      <h3>Message the winner</h3>
+      <p class="muted" style="font-size:13px;">Reach out to ${escapeHtml(item.currentBidderName || "the winner")} to arrange payment and delivery.</p>
+      <div id="chat-mount"></div>
+      <div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap;">
+        <button type="button" id="request-contact-btn" class="btn subtle small">&#128231; Request delivery details</button>
+        <button type="button" id="mark-fulfilled-btn" class="btn ghost small">${item.fulfilled ? "Mark undelivered" : "Mark as delivered"}</button>
+      </div>`;
+
     openChat(document.querySelector("#chat-mount"), me.uid, item.currentBidderUid, { name: item.currentBidderName, photoURL: winner.photoURL });
 
-    document.querySelector("#request-contact-btn")?.addEventListener("click", () => {
+    document.querySelector("#request-contact-btn").addEventListener("click", () => {
       insertChatTemplate(
         `Hi! Congrats on winning "${item.title || "the item"}" for ${formatMoney(item.currentBid || item.startingPrice)}. Could you send me your delivery details — full name, phone number, and address (or preferred pickup spot) — so I can get this to you?`
       );
     });
 
-    document.querySelector("#mark-fulfilled-btn")?.addEventListener("click", async () => {
+    document.querySelector("#mark-fulfilled-btn").addEventListener("click", async () => {
       try {
         await updateDoc(doc(db, "items", itemId), { fulfilled: !item.fulfilled });
         showToast(item.fulfilled ? "Marked as awaiting delivery." : "Marked as delivered.", { type: "success" });
@@ -267,6 +345,22 @@ function wireDetailEvents(isOwner, ended) {
         showToast("Couldn't update that — try again.", { type: "error" });
       }
     });
+  } else {
+    mount.innerHTML = "";
+    closeChat();
+  }
+}
+
+/** Keeps the "Mark as delivered" label's wording current without touching
+ * (or even glancing at) the chat panel sitting right next to it. */
+function updateFulfilledButton() {
+  const btn = document.querySelector("#mark-fulfilled-btn");
+  if (btn) btn.textContent = item.fulfilled ? "Mark undelivered" : "Mark as delivered";
+  const shareWrap = document.querySelector("#share-contact-wrap");
+  if (shareWrap) {
+    const ended = isEnded(item);
+    const iWon = ended && item.currentBidderUid === me.uid && (item.bidCount || 0) > 0;
+    shareWrap.style.display = iWon ? "block" : "none";
   }
 }
 
@@ -289,7 +383,7 @@ async function toggleSave() {
   else myData.savedItems.push(itemId);
   await updateDoc(doc(db, "users", me.uid), { savedItems: saved ? arrayRemove(itemId) : arrayUnion(itemId) });
   showToast(saved ? "Removed from Watchlist." : "Watching — you'll be pinged before it ends.", { type: saved ? "info" : "success" });
-  render();
+  updateLikeButton();
 }
 
 const FEEDBACK_PRESETS = [
@@ -367,18 +461,18 @@ function renderBidHistory(bids) {
     </div>`).join("")}</div>`;
 }
 
-/** Live-watches the item doc (price/bidder/countdown updates from anyone
- * bidding) and the bid history subcollection, for as long as this page is open. */
-/** Fields that actually change what render() draws. viewCount is
+/** Fields that actually change what the page draws. viewCount is
  * deliberately excluded — it isn't shown anywhere on this page, so a
  * bystander's view (including the winner opening this same page to reply)
- * shouldn't be a reason to tear down and rebuild the whole page, chat panel
- * included, out from under someone who's mid-message. */
+ * shouldn't cause any DOM work at all, let alone disturb someone mid-message
+ * or mid-bid. */
 function relevantSnapshot(data) {
   const { viewCount, ...rest } = data;
   return rest;
 }
 
+/** Live-watches the item doc (price/bidder/countdown updates from anyone
+ * bidding) and the bid history subcollection, for as long as this page is open. */
 function watchLive() {
   itemUnsub = onSnapshot(doc(db, "items", itemId), async (snap) => {
     if (!snap.exists()) return;
@@ -392,7 +486,7 @@ function watchLive() {
       const winnerSnap = await getDoc(doc(db, "users", item.currentBidderUid)).catch(() => null);
       winner = winnerSnap?.data() || {};
     }
-    if (JSON.stringify(relevantSnapshot(item)) === prevSignature) return; // nothing rendered actually changed — leave the DOM (and any in-progress chat draft) alone
+    if (JSON.stringify(relevantSnapshot(item)) === prevSignature) return; // nothing rendered actually changed — skip the update entirely
     render();
   });
   bidsUnsub = onSnapshot(query(collection(db, "items", itemId, "bids"), orderBy("at", "desc"), limit(20)), (snap) => {

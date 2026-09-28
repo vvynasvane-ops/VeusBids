@@ -43,6 +43,10 @@
   --radius-sm: 6px;
   --radius-pill: 999px;
   --nav-h: 66px;
+  --shell-max: 1080px;
+  /* Side gutter of the page column. Content stays centred at --shell-max, but the
+     bars use the same value as a negative margin so they bleed to the true edges. */
+  --shell-pad: max(24px, calc((100vw - var(--shell-max)) / 2 + 24px));
 
   /* ---- user-adjustable appearance (Settings → Appearance), read live by
      appearance.js and applied on every page ---- */
@@ -343,9 +347,9 @@ h3{ font-size: 15px; }
 a{ color: var(--accent); text-decoration: none; }
 
 .shell{
-  max-width: 1080px;
-  margin: 0 auto;
-  padding: 0 24px;
+  max-width: none;
+  margin: 0;
+  padding: 0 var(--shell-pad);
 }
 
 /* ---- ornamental plasma rule, the one signature motif ---- */
@@ -357,17 +361,34 @@ a{ color: var(--accent); text-decoration: none; }
   opacity: .6;
 }
 
-/* ---- top bar ---- */
+/* ---- top bar — full-bleed: escapes the .shell gutters so the glass runs edge to edge ---- */
 .topbar{
   display:flex; align-items:center; justify-content:space-between;
-  gap: 14px;
-  padding: 20px 0;
+  gap: 12px;
+  margin: 0 calc(-1 * var(--shell-pad));
+  padding: calc(10px + env(safe-area-inset-top, 0px))
+           max(var(--shell-pad), env(safe-area-inset-right, 0px))
+           10px
+           max(var(--shell-pad), env(safe-area-inset-left, 0px));
   border-bottom: 1px solid var(--line);
   position: sticky; top: 0; z-index: 200;
   background: hsl(var(--accent-h) 40% 6% / .82);
-  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  backdrop-filter: blur(14px) saturate(1.4);
 }
 [data-mode="light"] .topbar{ background: hsl(0 0% 100% / .86); }
+/* Plasma hairline along the bottom edge. When the nav row sits directly under the
+   top bar the two read as ONE header, so the line moves to the nav row instead. */
+.topbar::after, #nav-mount::after{
+  content:""; position:absolute; left:0; right:0; bottom:-1px; height:1px; pointer-events:none;
+  background: linear-gradient(90deg, transparent, var(--accent) 25%, var(--accent2) 75%, transparent);
+  background-size: 200% 100%;
+  animation: hairline-flow 9s linear infinite;
+  opacity:.6;
+}
+.topbar:has(+ #nav-mount){ border-bottom-color: transparent; }
+.topbar:has(+ #nav-mount)::after{ display:none; }
+@keyframes hairline-flow{ from{ background-position: 0% 0; } to{ background-position: 200% 0; } }
 .brand{
   font-family: var(--font-display);
   font-size: 20px;
@@ -972,34 +993,51 @@ textarea{ resize: vertical; min-height: 90px; }
 
 /* ---- shared app nav (renders via nav.js into #nav-mount) ---- */
 #nav-mount{
-  position: sticky; top: var(--topbar-h, 64px); z-index: 190;
+  position: sticky; top: var(--topbar-h, 56px); z-index: 190;
+  margin: 0 calc(-1 * var(--shell-pad));
+  padding: 0 max(var(--shell-pad), env(safe-area-inset-right, 0px)) 0 max(var(--shell-pad), env(safe-area-inset-left, 0px));
   background: hsl(var(--accent-h) 40% 6% / .82);
-  backdrop-filter: blur(10px);
-  margin: 0 -24px; padding: 0 24px;
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  backdrop-filter: blur(14px) saturate(1.4);
+  border-bottom: 1px solid var(--line);
 }
 [data-mode="light"] #nav-mount{ background: hsl(0 0% 100% / .86); }
 .appnav{
-  display:flex; gap:6px; align-items:center;
-  padding: 10px 0;
+  position:relative;
+  display:flex; gap:4px; align-items:center;
+  padding: 6px 0;
 }
+/* One pill that glides between tabs (positioned by nav.js). */
+.appnav-glide{
+  position:absolute; top:6px; bottom:6px; left:0; width:0;
+  border-radius: var(--radius-pill);
+  background: var(--bg-inset);
+  box-shadow: 0 0 0 1px hsl(var(--accent-h) var(--accent-s) var(--accent-l) / .32),
+              0 0 20px hsl(var(--accent-h) var(--accent-s) var(--accent-l) / .16);
+  opacity:0; pointer-events:none;
+  transition: transform .38s cubic-bezier(.3,1.25,.5,1), width .38s cubic-bezier(.3,1.25,.5,1), opacity .2s ease;
+}
+.appnav-glide.ready{ opacity:1; }
 .appnav-item{
-  display:flex; align-items:center; gap:7px;
-  padding: 9px 15px;
+  position:relative; z-index:1;
+  display:flex; align-items:center; gap:8px;
+  padding: 8px 15px;
   border-radius: var(--radius-pill);
   color: var(--text-muted);
   font-size: 13px;
   font-weight:600;
-  transition: background .2s ease, color .2s ease, box-shadow .2s ease;
+  transition: color .2s ease;
 }
 .appnav-item:hover{ color: var(--user-font-color); }
-.appnav-item.active{ background: var(--bg-inset); color: var(--accent); box-shadow: 0 0 0 1px hsl(var(--accent-h) var(--accent-s) var(--accent-l) / .3); }
-.appnav-icon{ font-size:16px; line-height:1; }
+.appnav-item.active{ color: var(--accent); }
+.appnav-icon{ display:block; width:18px; height:18px; transition: transform .25s ease; }
+.appnav-item:hover .appnav-icon{ transform: translateY(-1px) scale(1.06); }
 .appnav-icon-wrap{ position:relative; display:inline-flex; }
 /* Live "new messages" ping on the Messages tab — driven by a real-time
    Firestore listener (see notifications.js), so it's never a one-time check:
    it updates the instant a new message lands, from whichever page is open. */
 .appnav-badge{
-  position:absolute; top:-6px; right:-8px;
+  position:absolute; top:-6px; right:-9px;
   min-width:15px; height:15px; padding:0 3px;
   border-radius: var(--radius-pill);
   background: linear-gradient(135deg, var(--accent), var(--accent2));
@@ -1019,39 +1057,50 @@ body{ padding-bottom: 0; }
    .topbar, ate most of the visible viewport on phones. The nav items
    live here instead, off-screen until the hamburger opens them. */
 .menu-btn{
-  display:none; flex-direction:column; justify-content:center; align-items:stretch;
-  gap:4px; width:34px; height:34px; padding:0; border:none; background:none;
-  cursor:pointer; flex-shrink:0;
+  display:none; flex-direction:column; justify-content:center; align-items:center;
+  gap:4px; width:38px; height:38px; margin-left:-8px; padding:0; border:none; background:none;
+  border-radius: var(--radius); cursor:pointer; flex-shrink:0;
+  -webkit-tap-highlight-color: transparent;
 }
+.menu-btn:active{ background: var(--bg-inset); }
 .menu-btn span{
-  display:block; height:2px; border-radius:2px; background: var(--user-font-color);
-  transition: transform .25s ease, opacity .2s ease;
+  display:block; width:22px; height:2px; border-radius:2px; background: var(--user-font-color);
+  transition: transform .25s ease, opacity .2s ease, width .25s ease;
 }
+.menu-btn span:nth-child(2){ width:14px; align-self:flex-end; margin-right:8px; }
 .menu-btn[aria-expanded="true"] span:nth-child(1){ transform: translateY(6px) rotate(45deg); }
 .menu-btn[aria-expanded="true"] span:nth-child(2){ opacity:0; }
 .menu-btn[aria-expanded="true"] span:nth-child(3){ transform: translateY(-6px) rotate(-45deg); }
 
 .veus-sidebar-overlay{
-  position:fixed; inset:0; z-index:290; background: rgba(2,1,8,.6); backdrop-filter: blur(2px);
+  position:fixed; inset:0; z-index:290; background: rgba(2,1,8,.6);
+  -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
   opacity:0; pointer-events:none; transition: opacity .25s ease;
 }
 .veus-sidebar-overlay.open{ opacity:1; pointer-events:auto; }
 
+/* Drawer: flush to the screen's left/top/bottom edges, nav rows run its full width. */
 .veus-sidebar{
   position:fixed; top:0; left:0; bottom:0; z-index:300;
-  width:78vw; max-width:300px;
+  width:82vw; max-width:320px;
   background: var(--bg-raised); border-right:1px solid var(--line);
-  box-shadow: 12px 0 40px var(--shadow);
-  transform: translateX(-100%); transition: transform .28s ease;
+  box-shadow: 16px 0 48px var(--shadow);
+  transform: translateX(-100%); transition: transform .3s cubic-bezier(.3,.9,.4,1);
   display:flex; flex-direction:column;
-  padding-top: calc(18px + env(safe-area-inset-top, 0px));
-  padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
   overflow-y:auto;
+}
+.veus-sidebar::after{
+  content:""; position:absolute; top:0; right:-1px; bottom:0; width:1px; pointer-events:none;
+  background: linear-gradient(180deg, var(--accent), transparent 40%, transparent 60%, var(--accent2));
+  opacity:.55;
 }
 .veus-sidebar.open{ transform: translateX(0); }
 .veus-sidebar-head{
   display:flex; align-items:center; justify-content:space-between;
-  padding: 0 18px 16px; border-bottom:1px solid var(--line); margin-bottom:10px;
+  padding: 16px 12px 16px 20px; border-bottom:1px solid var(--line); margin-bottom:8px;
 }
 .veus-sidebar-brand{
   font-family: var(--font-display); font-size:17px; font-weight:700;
@@ -1059,25 +1108,45 @@ body{ padding-bottom: 0; }
 }
 .veus-sidebar-brand em{ color: var(--accent); font-style:normal; }
 .veus-sidebar-close{
-  background:none; border:none; color: var(--text-muted); font-size:22px;
-  line-height:1; padding:4px 8px; cursor:pointer;
+  background:none; border:none; color: var(--text-muted); font-size:24px;
+  line-height:1; width:40px; height:40px; border-radius: var(--radius); cursor:pointer;
 }
-.veus-sidebar-close:hover{ color: var(--user-font-color); }
-.veus-sidebar-nav{ display:flex; flex-direction:column; gap:2px; padding: 0 10px; }
+.veus-sidebar-close:hover, .veus-sidebar-close:active{ color: var(--user-font-color); background: var(--bg-inset); }
+.veus-sidebar-nav{ display:flex; flex-direction:column; gap:0; padding: 0; }
 .veus-sidebar-item{
-  display:flex; align-items:center; gap:12px; padding:13px 14px;
-  border-radius: var(--radius); color: var(--text-muted);
-  font-size:14px; font-weight:600;
+  position:relative;
+  display:flex; align-items:center; gap:14px; padding:15px 20px;
+  color: var(--text-muted);
+  font-size:15px; font-weight:600;
+  -webkit-tap-highlight-color: transparent;
+  transition: background .2s ease, color .2s ease;
 }
-.veus-sidebar-item:hover{ color: var(--user-font-color); background: var(--bg-inset); }
-.veus-sidebar-item.active{ background: var(--bg-inset); color: var(--accent); box-shadow: 0 0 0 1px hsl(var(--accent-h) var(--accent-s) var(--accent-l) / .3); }
-.veus-sidebar-foot{ margin-top:auto; padding: 14px 18px 0; border-top:1px solid var(--line); }
+.veus-sidebar-item .appnav-icon{ width:20px; height:20px; }
+.veus-sidebar-item:hover, .veus-sidebar-item:active{ color: var(--user-font-color); background: var(--bg-inset); }
+.veus-sidebar-item.active{
+  color: var(--accent);
+  background: linear-gradient(90deg, hsl(var(--accent-h) var(--accent-s) var(--accent-l) / .16), transparent 85%);
+}
+.veus-sidebar-item.active::before{
+  content:""; position:absolute; left:0; top:0; bottom:0; width:3px;
+  background: linear-gradient(180deg, var(--accent), var(--accent2));
+  box-shadow: 0 0 12px hsl(var(--accent-h) var(--accent-s) var(--accent-l) / .6);
+}
+.veus-sidebar-foot{ margin-top:auto; padding: 14px 20px; border-top:1px solid var(--line); }
 
 @media (max-width: 720px){
   #nav-mount{ display:none; }
   .menu-btn{ display:flex; }
+  .topbar{ padding-top: calc(8px + env(safe-area-inset-top, 0px)); padding-bottom: 8px; }
+  .topbar:has(+ #nav-mount)::after{ display:block; }
+  .topbar:has(+ #nav-mount){ border-bottom-color: var(--line); }
   .topbar .btn.ghost.small{ padding: 7px 12px; }
   .toast-root{ left:12px; right:12px; top:78px; max-width:none; }
+}
+
+@media (prefers-reduced-motion: reduce){
+  .topbar::after, #nav-mount::after{ animation:none; }
+  .appnav-glide, .veus-sidebar, .menu-btn span, .appnav-icon{ transition:none; }
 }
 
 /* ---- search & filters (Discover / Home) ---- */

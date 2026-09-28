@@ -7,11 +7,21 @@
 // bottom bar) stacked under the sticky .topbar — on phones that combo
 // left almost nothing on screen for the actual page content.
 
+// Inline SVG icons (stroke = currentColor) instead of Unicode glyphs: the old
+// ⌕ ✉ ⬡ ☰ characters render at different sizes/weights on every device font.
+const svg = inner => `<svg class="appnav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
+const ICONS = {
+  browse: svg(`<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/>`),
+  messages: svg(`<path d="M5 4.5h14a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5h-8.5L6 20v-3.5H5A1.5 1.5 0 0 1 3.5 15V6A1.5 1.5 0 0 1 5 4.5z"/>`),
+  profile: svg(`<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/>`),
+  settings: svg(`<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>`)
+};
+
 const ITEMS = [
-  { id: "browse", href: "browse.html", label: "Browse", icon: "⌕" },
-  { id: "messages", href: "messages.html", label: "Messages", icon: "✉" },
-  { id: "profile", href: "listings.html", label: "My Listings", icon: "⬡" },
-  { id: "settings", href: "settings.html", label: "Theme", icon: "☰" }
+  { id: "browse", href: "browse.html", label: "Browse", icon: ICONS.browse },
+  { id: "messages", href: "messages.html", label: "Messages", icon: ICONS.messages },
+  { id: "profile", href: "listings.html", label: "My Listings", icon: ICONS.profile },
+  { id: "settings", href: "settings.html", label: "Theme", icon: ICONS.settings }
 ];
 
 // The unread-message badge is driven by a live Firestore listener in
@@ -36,7 +46,43 @@ export function renderNav(activeId) {
 function renderTopRow(activeId) {
   const mount = document.querySelector("#nav-mount");
   if (!mount) return;
-  mount.innerHTML = `<nav class="appnav">${ITEMS.map(item => navLinkHtml(item, activeId, false)).join("")}</nav>`;
+  mount.innerHTML = `<nav class="appnav"><span class="appnav-glide" aria-hidden="true"></span>${ITEMS.map(item => navLinkHtml(item, activeId, false)).join("")}</nav>`;
+  initGlide(mount.querySelector(".appnav"));
+}
+
+// The active-tab pill. It starts where it sat on the PREVIOUS page (remembered
+// in sessionStorage) and slides to the new tab, so navigating feels continuous
+// even though every page is a full reload. Falls back to a plain placement.
+const GLIDE_KEY = "veus-nav-glide";
+function initGlide(nav) {
+  const glide = nav.querySelector(".appnav-glide");
+  const place = (animate) => {
+    const active = nav.querySelector(".appnav-item.active");
+    if (!active) { glide.classList.remove("ready"); return; }
+    const to = { x: active.offsetLeft, w: active.offsetWidth };
+    let from = null;
+    if (animate) { try { from = JSON.parse(sessionStorage.getItem(GLIDE_KEY)); } catch (e) {} }
+    const apply = r => { glide.style.width = r.w + "px"; glide.style.transform = `translateX(${r.x}px)`; };
+    if (from && typeof from.x === "number" && (from.x !== to.x || from.w !== to.w)) {
+      glide.style.transition = "none";
+      apply(from);
+      glide.classList.add("ready");
+      void glide.offsetWidth;            // commit the start position
+      glide.style.transition = "";
+      requestAnimationFrame(() => apply(to));
+    } else {
+      glide.style.transition = "none";
+      apply(to);
+      glide.classList.add("ready");
+      void glide.offsetWidth;
+      glide.style.transition = "";
+    }
+    try { sessionStorage.setItem(GLIDE_KEY, JSON.stringify(to)); } catch (e) {}
+  };
+  place(true);
+  // Webfonts / badge / resize can shift tab widths after first paint: re-seat without animating.
+  if (window.ResizeObserver) new ResizeObserver(() => place(false)).observe(nav);
+  window.addEventListener("resize", () => place(false));
 }
 
 function navLinkHtml(item, activeId, sidebar) {
@@ -44,7 +90,7 @@ function navLinkHtml(item, activeId, sidebar) {
   return `
     <a class="${cls} ${item.id === activeId ? "active" : ""}" href="${item.href}">
       <span class="appnav-icon-wrap">
-        <span class="appnav-icon">${item.icon}</span>
+        ${item.icon}
         ${item.id === "messages" ? `<span class="appnav-badge js-msg-badge" hidden></span>` : ""}
       </span>
       <span class="appnav-label">${item.label}</span>

@@ -991,7 +991,29 @@ textarea{ resize: vertical; min-height: 90px; }
 .notif-item-time{ font-size:11px; color: var(--text-muted); }
 .notif-empty{ padding: 24px 16px; text-align:center; font-size:13px; color: var(--text-muted); margin:0; }
 
-/* ---- shared app nav (renders via nav.js into #nav-mount) ---- */
+/* ---- shared app nav (renders via nav.js into #nav-mount) ----
+   Reworked along HostelHive's dock lines: full-bleed glass, glowing plasma
+   hairline, and — the main change — the nav row itself becomes the mobile
+   nav. On narrow screens it's no longer hidden in favour of a hamburger +
+   off-canvas drawer; instead #nav-mount detaches from the sticky top flow
+   and pins flush to the BOTTOM edge of the screen, edge to edge, padded for
+   the gesture area. nav.js still builds #menu-btn / #veus-sidebar /
+   #veus-sidebar-overlay every load (untouched), so they're kept fully
+   built but hidden at every width below — the dock replaces them outright.
+   The active-tab pill (.appnav-glide) is still positioned by nav.js; here
+   it's restyled to glow, and each icon gets a soft halo + slow heartbeat
+   when active, echoing the plasma-cyan/ultraviolet duotone used elsewhere. */
+@keyframes nav-heart{
+  0%, 100%{ transform: translateY(-1px) scale(1); }
+  14%{ transform: translateY(-1px) scale(1.16); }
+  28%{ transform: translateY(-1px) scale(1); }
+  42%{ transform: translateY(-1px) scale(1.1); }
+  70%{ transform: translateY(-1px) scale(1); }
+}
+@keyframes halo-breathe{
+  0%, 100%{ opacity:.5; transform: scale(.88); }
+  50%{ opacity:1; transform: scale(1.15); }
+}
 #nav-mount{
   position: sticky; top: var(--topbar-h, 56px); z-index: 190;
   margin: 0 calc(-1 * var(--shell-pad));
@@ -1026,13 +1048,25 @@ textarea{ resize: vertical; min-height: 90px; }
   color: var(--text-muted);
   font-size: 13px;
   font-weight:600;
-  transition: color .2s ease;
+  transition: color .2s ease, transform .15s ease;
 }
 .appnav-item:hover{ color: var(--user-font-color); }
 .appnav-item.active{ color: var(--accent); }
-.appnav-icon{ display:block; width:18px; height:18px; transition: transform .25s ease; }
+.appnav-item.active .appnav-label{ font-weight:700; letter-spacing:.01em; }
+.appnav-item:active{ transform: scale(.96); }
+.appnav-icon{ display:block; width:18px; height:18px; transition: transform .25s ease; position:relative; z-index:1; }
 .appnav-item:hover .appnav-icon{ transform: translateY(-1px) scale(1.06); }
 .appnav-icon-wrap{ position:relative; display:inline-flex; }
+.appnav-icon-wrap::before{                /* plasma halo behind the active icon */
+  content:""; position:absolute; inset:-9px; border-radius:50%; z-index:0; pointer-events:none;
+  background: radial-gradient(circle,
+    hsl(var(--accent-h) var(--accent-s) var(--accent-l) / .4),
+    hsl(var(--accent2-h) var(--accent2-s) var(--accent2-l) / .16) 55%, transparent 72%);
+  opacity:0; transition: opacity .3s ease;
+}
+.appnav-item.active .appnav-icon-wrap{ animation: nav-heart 3.2s ease-in-out infinite; }
+.appnav-item.active .appnav-icon-wrap::before{ opacity:1; animation: halo-breathe 3.2s ease-in-out infinite; }
+.appnav-item.active .appnav-icon{ filter: drop-shadow(0 0 6px hsl(var(--accent-h) var(--accent-s) var(--accent-l) / .7)); }
 /* Live "new messages" ping on the Messages tab — driven by a real-time
    Firestore listener (see notifications.js), so it's never a one-time check:
    it updates the instant a new message lands, from whichever page is open. */
@@ -1049,104 +1083,43 @@ textarea{ resize: vertical; min-height: 90px; }
 
 body{ padding-bottom: 0; }
 
-/* ---- mobile hamburger + off-canvas sidebar (renders via nav.js into
-   #veus-sidebar/#veus-sidebar-overlay, appended once to <body>) ----
-   On narrow screens the horizontal #nav-mount row is hidden outright
-   (see the @media block below) instead of turning into a second sticky
-   row or a fixed bottom bar — either of which, stacked under the sticky
-   .topbar, ate most of the visible viewport on phones. The nav items
-   live here instead, off-screen until the hamburger opens them. */
-.menu-btn{
-  display:none; flex-direction:column; justify-content:center; align-items:center;
-  gap:4px; width:38px; height:38px; margin-left:-8px; padding:0; border:none; background:none;
-  border-radius: var(--radius); cursor:pointer; flex-shrink:0;
-  -webkit-tap-highlight-color: transparent;
-}
-.menu-btn:active{ background: var(--bg-inset); }
-.menu-btn span{
-  display:block; width:22px; height:2px; border-radius:2px; background: var(--user-font-color);
-  transition: transform .25s ease, opacity .2s ease, width .25s ease;
-}
-.menu-btn span:nth-child(2){ width:14px; align-self:flex-end; margin-right:8px; }
-.menu-btn[aria-expanded="true"] span:nth-child(1){ transform: translateY(6px) rotate(45deg); }
-.menu-btn[aria-expanded="true"] span:nth-child(2){ opacity:0; }
-.menu-btn[aria-expanded="true"] span:nth-child(3){ transform: translateY(-6px) rotate(-45deg); }
-
-.veus-sidebar-overlay{
-  position:fixed; inset:0; z-index:290; background: rgba(2,1,8,.6);
-  -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
-  opacity:0; pointer-events:none; transition: opacity .25s ease;
-}
-.veus-sidebar-overlay.open{ opacity:1; pointer-events:auto; }
-
-/* Drawer: flush to the screen's left/top/bottom edges, nav rows run its full width. */
-.veus-sidebar{
-  position:fixed; top:0; left:0; bottom:0; z-index:300;
-  width:82vw; max-width:320px;
-  background: var(--bg-raised); border-right:1px solid var(--line);
-  box-shadow: 16px 0 48px var(--shadow);
-  transform: translateX(-100%); transition: transform .3s cubic-bezier(.3,.9,.4,1);
-  display:flex; flex-direction:column;
-  padding-top: env(safe-area-inset-top, 0px);
-  padding-bottom: env(safe-area-inset-bottom, 0px);
-  padding-left: env(safe-area-inset-left, 0px);
-  overflow-y:auto;
-}
-.veus-sidebar::after{
-  content:""; position:absolute; top:0; right:-1px; bottom:0; width:1px; pointer-events:none;
-  background: linear-gradient(180deg, var(--accent), transparent 40%, transparent 60%, var(--accent2));
-  opacity:.55;
-}
-.veus-sidebar.open{ transform: translateX(0); }
-.veus-sidebar-head{
-  display:flex; align-items:center; justify-content:space-between;
-  padding: 16px 12px 16px 20px; border-bottom:1px solid var(--line); margin-bottom:8px;
-}
-.veus-sidebar-brand{
-  font-family: var(--font-display); font-size:17px; font-weight:700;
-  letter-spacing:.04em; text-transform:uppercase; color: var(--user-font-color);
-}
-.veus-sidebar-brand em{ color: var(--accent); font-style:normal; }
-.veus-sidebar-close{
-  background:none; border:none; color: var(--text-muted); font-size:24px;
-  line-height:1; width:40px; height:40px; border-radius: var(--radius); cursor:pointer;
-}
-.veus-sidebar-close:hover, .veus-sidebar-close:active{ color: var(--user-font-color); background: var(--bg-inset); }
-.veus-sidebar-nav{ display:flex; flex-direction:column; gap:0; padding: 0; }
-.veus-sidebar-item{
-  position:relative;
-  display:flex; align-items:center; gap:14px; padding:15px 20px;
-  color: var(--text-muted);
-  font-size:15px; font-weight:600;
-  -webkit-tap-highlight-color: transparent;
-  transition: background .2s ease, color .2s ease;
-}
-.veus-sidebar-item .appnav-icon{ width:20px; height:20px; }
-.veus-sidebar-item:hover, .veus-sidebar-item:active{ color: var(--user-font-color); background: var(--bg-inset); }
-.veus-sidebar-item.active{
-  color: var(--accent);
-  background: linear-gradient(90deg, hsl(var(--accent-h) var(--accent-s) var(--accent-l) / .16), transparent 85%);
-}
-.veus-sidebar-item.active::before{
-  content:""; position:absolute; left:0; top:0; bottom:0; width:3px;
-  background: linear-gradient(180deg, var(--accent), var(--accent2));
-  box-shadow: 0 0 12px hsl(var(--accent-h) var(--accent-s) var(--accent-l) / .6);
-}
-.veus-sidebar-foot{ margin-top:auto; padding: 14px 20px; border-top:1px solid var(--line); }
+/* ---- retired: hamburger + off-canvas sidebar ----
+   nav.js still builds/wires #menu-btn, #veus-sidebar and
+   #veus-sidebar-overlay every load, but the dock (#nav-mount) now covers
+   every width, so these stay built yet invisible and out of the tab order. */
+.menu-btn, .veus-sidebar, .veus-sidebar-overlay{ display:none !important; }
 
 @media (max-width: 720px){
-  #nav-mount{ display:none; }
-  .menu-btn{ display:flex; }
+  /* env(safe-area-inset-bottom) covers the gesture bar on modern Android
+     phones (this installs as a standalone PWA per manifest.json), so the
+     dock — and the content scrolled behind it — never sits under the
+     system nav area. Needs viewport-fit=cover on the viewport meta tag. */
+  body{ padding-bottom: calc(var(--nav-h) + 10px + env(safe-area-inset-bottom, 0px)); }
+
   .topbar{ padding-top: calc(8px + env(safe-area-inset-top, 0px)); padding-bottom: 8px; }
-  .topbar:has(+ #nav-mount)::after{ display:block; }
+  .topbar:has(+ #nav-mount)::after{ display:block; }         /* header keeps its own hairline now that the dock has moved off */
   .topbar:has(+ #nav-mount){ border-bottom-color: var(--line); }
   .topbar .btn.ghost.small{ padding: 7px 12px; }
+
+  /* the dock itself: flush to the screen edges, pinned to the bottom */
+  #nav-mount{
+    position: fixed; top:auto; left:0; right:0; bottom:0; z-index:80;
+    margin:0; height: var(--nav-h);
+    padding: 0 env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+    border-bottom:none; border-top:1px solid var(--line);
+    box-shadow: 0 -10px 28px var(--shadow);
+  }
+  #nav-mount::after{ top:-1px; bottom:auto; }                /* hairline sits on the dock's TOP edge */
+  .appnav{ height:100%; padding: 0 6px; justify-content: space-around; }
+  .appnav-item{ flex-direction:column; gap:3px; padding: 6px 8px; font-size:11px; }
+  .appnav-glide{ top:4px; bottom:4px; }
   .toast-root{ left:12px; right:12px; top:78px; max-width:none; }
 }
 
 @media (prefers-reduced-motion: reduce){
-  .topbar::after, #nav-mount::after{ animation:none; }
-  .appnav-glide, .veus-sidebar, .menu-btn span, .appnav-icon{ transition:none; }
+  .topbar::after, #nav-mount::after,
+  .appnav-item.active .appnav-icon-wrap, .appnav-item.active .appnav-icon-wrap::before{ animation:none !important; }
+  .appnav-glide, .menu-btn span, .appnav-icon{ transition:none; }
 }
 
 /* ---- search & filters (Discover / Home) ---- */

@@ -992,28 +992,12 @@ textarea{ resize: vertical; min-height: 90px; }
 .notif-empty{ padding: 24px 16px; text-align:center; font-size:13px; color: var(--text-muted); margin:0; }
 
 /* ---- shared app nav (renders via nav.js into #nav-mount) ----
-   Reworked along HostelHive's dock lines: full-bleed glass, glowing plasma
-   hairline, and — the main change — the nav row itself becomes the mobile
-   nav. On narrow screens it's no longer hidden in favour of a hamburger +
-   off-canvas drawer; instead #nav-mount detaches from the sticky top flow
-   and pins flush to the BOTTOM edge of the screen, edge to edge, padded for
-   the gesture area. nav.js still builds #menu-btn / #veus-sidebar /
-   #veus-sidebar-overlay every load (untouched), so they're kept fully
-   built but hidden at every width below — the dock replaces them outright.
-   The active-tab pill (.appnav-glide) is still positioned by nav.js; here
-   it's restyled to glow, and each icon gets a soft halo + slow heartbeat
-   when active, echoing the plasma-cyan/ultraviolet duotone used elsewhere. */
-@keyframes nav-heart{
-  0%, 100%{ transform: translateY(-1px) scale(1); }
-  14%{ transform: translateY(-1px) scale(1.16); }
-  28%{ transform: translateY(-1px) scale(1); }
-  42%{ transform: translateY(-1px) scale(1.1); }
-  70%{ transform: translateY(-1px) scale(1); }
-}
-@keyframes halo-breathe{
-  0%, 100%{ opacity:.5; transform: scale(.88); }
-  50%{ opacity:1; transform: scale(1.15); }
-}
+   Flush dock: on wide screens the nav row sits directly under the sticky top
+   bar, full-bleed glass, tabs sharing the row equally, with a glowing plasma
+   "beam" under the active tab. On narrow screens the row detaches from the
+   top and re-docks flush to the BOTTOM of the screen instead — a fixed tab
+   bar, edge to edge, padded for the gesture area, with the beam now hanging
+   from each tab's top edge. */
 #nav-mount{
   position: sticky; top: var(--topbar-h, 56px); z-index: 190;
   margin: 0 calc(-1 * var(--shell-pad));
@@ -1021,57 +1005,47 @@ textarea{ resize: vertical; min-height: 90px; }
   background: hsl(var(--accent-h) 40% 6% / .82);
   -webkit-backdrop-filter: blur(14px) saturate(1.4);
   backdrop-filter: blur(14px) saturate(1.4);
-  border-bottom: 1px solid var(--line);
 }
 [data-mode="light"] #nav-mount{ background: hsl(0 0% 100% / .86); }
 .appnav{
-  position:relative;
-  display:flex; gap:4px; align-items:center;
-  padding: 6px 0;
+  display:flex; align-items:stretch; gap:0;
+  height: var(--appnav-h, 52px); padding:0; margin:0;
 }
-/* One pill that glides between tabs (positioned by nav.js). */
-.appnav-glide{
-  position:absolute; top:6px; bottom:6px; left:0; width:0;
-  border-radius: var(--radius-pill);
-  background: var(--bg-inset);
-  box-shadow: 0 0 0 1px hsl(var(--accent-h) var(--accent-s) var(--accent-l) / .32),
-              0 0 20px hsl(var(--accent-h) var(--accent-s) var(--accent-l) / .16);
-  opacity:0; pointer-events:none;
-  transition: transform .38s cubic-bezier(.3,1.25,.5,1), width .38s cubic-bezier(.3,1.25,.5,1), opacity .2s ease;
-}
-.appnav-glide.ready{ opacity:1; }
 .appnav-item{
-  position:relative; z-index:1;
-  display:flex; align-items:center; gap:8px;
-  padding: 8px 15px;
-  border-radius: var(--radius-pill);
+  position:relative;
+  flex: 1 1 0; min-width:0;
+  display:flex; align-items:center; justify-content:center; gap:8px;
+  padding: 0 10px;
   color: var(--text-muted);
-  font-size: 13px;
-  font-weight:600;
-  transition: color .2s ease, transform .15s ease;
+  font-size: 13px; font-weight:600; white-space:nowrap;
+  transition: background .25s ease, color .2s ease;
 }
-.appnav-item:hover{ color: var(--user-font-color); }
-.appnav-item.active{ color: var(--accent); }
-.appnav-item.active .appnav-label{ font-weight:700; letter-spacing:.01em; }
-.appnav-item:active{ transform: scale(.96); }
-.appnav-icon{ display:block; width:18px; height:18px; transition: transform .25s ease; position:relative; z-index:1; }
-.appnav-item:hover .appnav-icon{ transform: translateY(-1px) scale(1.06); }
-.appnav-icon-wrap{ position:relative; display:inline-flex; }
-.appnav-icon-wrap::before{                /* plasma halo behind the active icon */
-  content:""; position:absolute; inset:-9px; border-radius:50%; z-index:0; pointer-events:none;
-  background: radial-gradient(circle,
-    hsl(var(--accent-h) var(--accent-s) var(--accent-l) / .4),
-    hsl(var(--accent2-h) var(--accent2-s) var(--accent2-l) / .16) 55%, transparent 72%);
-  opacity:0; transition: opacity .3s ease;
+.appnav-item::after{                      /* the beam */
+  content:""; position:absolute; left:50%; bottom:0;
+  width:0; height:2px; transform: translateX(-50%);
+  border-radius: 2px 2px 0 0;
+  background: linear-gradient(90deg, var(--accent2), var(--accent), var(--accent2));
+  box-shadow: 0 0 12px 1px hsl(var(--accent-h) var(--accent-s) var(--accent-l) / .8);
+  transition: width .3s cubic-bezier(.2,.8,.2,1);
 }
-.appnav-item.active .appnav-icon-wrap{ animation: nav-heart 3.2s ease-in-out infinite; }
-.appnav-item.active .appnav-icon-wrap::before{ opacity:1; animation: halo-breathe 3.2s ease-in-out infinite; }
-.appnav-item.active .appnav-icon{ filter: drop-shadow(0 0 6px hsl(var(--accent-h) var(--accent-s) var(--accent-l) / .7)); }
+.appnav-item:hover{
+  color: var(--user-font-color);
+  background: linear-gradient(0deg, hsl(var(--accent-h) var(--accent-s) var(--accent-l) / .07), transparent 80%);
+}
+.appnav-item:hover::after{ width: 32%; }
+.appnav-item.active{
+  color: var(--accent);
+  background: linear-gradient(0deg, hsl(var(--accent-h) var(--accent-s) var(--accent-l) / .16), transparent 85%);
+}
+.appnav-item.active::after{ width: 70%; }
+.appnav-icon{ display:block; width:17px; height:17px; }
+.appnav-icon-wrap{ position:relative; display:inline-flex; transition: transform .25s ease; }
+.appnav-item.active .appnav-icon-wrap{ transform: translateY(-1px) scale(1.12); }
 /* Live "new messages" ping on the Messages tab — driven by a real-time
    Firestore listener (see notifications.js), so it's never a one-time check:
    it updates the instant a new message lands, from whichever page is open. */
 .appnav-badge{
-  position:absolute; top:-6px; right:-9px;
+  position:absolute; top:-6px; right:-8px;
   min-width:15px; height:15px; padding:0 3px;
   border-radius: var(--radius-pill);
   background: linear-gradient(135deg, var(--accent), var(--accent2));
@@ -1083,43 +1057,44 @@ textarea{ resize: vertical; min-height: 90px; }
 
 body{ padding-bottom: 0; }
 
-/* ---- retired: hamburger + off-canvas sidebar ----
-   nav.js still builds/wires #menu-btn, #veus-sidebar and
-   #veus-sidebar-overlay every load, but the dock (#nav-mount) now covers
-   every width, so these stay built yet invisible and out of the tab order. */
-.menu-btn, .veus-sidebar, .veus-sidebar-overlay{ display:none !important; }
-
 @media (max-width: 720px){
-  /* env(safe-area-inset-bottom) covers the gesture bar on modern Android
-     phones (this installs as a standalone PWA per manifest.json), so the
-     dock — and the content scrolled behind it — never sits under the
-     system nav area. Needs viewport-fit=cover on the viewport meta tag. */
-  body{ padding-bottom: calc(var(--nav-h) + 10px + env(safe-area-inset-bottom, 0px)); }
+  :root{ --appnav-h: 66px; }
+  /* env(safe-area-inset-bottom) accounts for the gesture bar on modern
+     Android phones so the bar — and the content scrolled behind it — never
+     sits under the system navigation area. Needs viewport-fit=cover on the
+     viewport meta. */
+  body{ padding-bottom: calc(var(--appnav-h) + 8px + env(safe-area-inset-bottom, 0px)); }
 
-  .topbar{ padding-top: calc(8px + env(safe-area-inset-top, 0px)); padding-bottom: 8px; }
-  .topbar:has(+ #nav-mount)::after{ display:block; }         /* header keeps its own hairline now that the dock has moved off */
+  /* topbar is now the top dock on its own; give it back its hairline,
+     since the nav row is no longer sitting directly under it. Matches the
+     :has() selector's specificity so it actually overrides it here. */
   .topbar:has(+ #nav-mount){ border-bottom-color: var(--line); }
-  .topbar .btn.ghost.small{ padding: 7px 12px; }
+  .topbar:has(+ #nav-mount)::after{ display:block; }
 
-  /* the dock itself: flush to the screen edges, pinned to the bottom */
+  /* bottom bar: flush to the screen edges, no margin, no radius */
   #nav-mount{
     position: fixed; top:auto; left:0; right:0; bottom:0; z-index:80;
-    margin:0; height: var(--nav-h);
-    padding: 0 env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
-    border-bottom:none; border-top:1px solid var(--line);
+    margin: 0; padding: 0 env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+    background: hsl(var(--accent-h) 40% 6% / .92);
     box-shadow: 0 -10px 28px var(--shadow);
   }
-  #nav-mount::after{ top:-1px; bottom:auto; }                /* hairline sits on the dock's TOP edge */
-  .appnav{ height:100%; padding: 0 6px; justify-content: space-around; }
-  .appnav-item{ flex-direction:column; gap:3px; padding: 6px 8px; font-size:11px; }
-  .appnav-glide{ top:4px; bottom:4px; }
+  [data-mode="light"] #nav-mount{ background: hsl(0 0% 100% / .92); }
+  #nav-mount::after{ top:0; bottom:auto; left:0; width:100%; }   /* hairline on the TOP edge */
+  .appnav-item{ flex-direction:column; gap:3px; padding: 6px 2px; text-align:center;
+    background: transparent; }
+  .appnav-item::after{ top:0; bottom:auto; border-radius: 0 0 2px 2px; }   /* beam hangs from the top */
+  .appnav-item:hover, .appnav-item.active{
+    background: linear-gradient(180deg, hsl(var(--accent-h) var(--accent-s) var(--accent-l) / .14), transparent 85%);
+  }
+  .appnav-item:hover:not(.active){ background: transparent; }
+  .appnav-label{ font-size:10px; }
+  .topbar .btn.ghost.small{ padding: 7px 12px; }
   .toast-root{ left:12px; right:12px; top:78px; max-width:none; }
 }
 
 @media (prefers-reduced-motion: reduce){
-  .topbar::after, #nav-mount::after,
-  .appnav-item.active .appnav-icon-wrap, .appnav-item.active .appnav-icon-wrap::before{ animation:none !important; }
-  .appnav-glide, .menu-btn span, .appnav-icon{ transition:none; }
+  .topbar::after, #nav-mount::after{ animation:none; }
+  .appnav-item::after, .appnav-icon-wrap{ transition:none; }
 }
 
 /* ---- search & filters (Discover / Home) ---- */

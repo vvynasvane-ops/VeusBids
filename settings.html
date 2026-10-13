@@ -137,7 +137,7 @@
       </div>
       <div id="pw-email-form">
         <label>Current password</label>
-        <input id="pw-current" type="password" autocomplete="current-password" placeholder="Current password">
+        <input id="pw-current" type="password" autocomplete="new-password" placeholder="Current password">
         <label>New password</label>
         <input id="pw-new" type="password" autocomplete="new-password" placeholder="At least 6 characters">
         <label>Confirm new password</label>
@@ -174,7 +174,7 @@
 
       <div id="delete-email-form" style="display:none;">
         <label>Current password</label>
-        <input id="delete-password" type="password" autocomplete="current-password" placeholder="Confirm your password">
+        <input id="delete-password" type="password" autocomplete="new-password" placeholder="Confirm your password">
       </div>
 
       <label>Type DELETE to confirm</label>
@@ -200,6 +200,7 @@
     import { startPresence } from "./presence.js";
     import { initNotifications, showToast } from "./notifications.js";
     import { loaderTrackHtml, addPasswordToggle } from "./common.js";
+    import { attachPasswordTools, showPasswordOnce } from "./password-tools.js";
     initTheme();
     renderNav("settings");
     document.body.insertAdjacentHTML("beforeend", loaderTrackHtml("Loading Theme"));
@@ -232,6 +233,8 @@
 
     // ---- Password & security ----
     ["#pw-current", "#pw-new", "#pw-confirm"].forEach(sel => addPasswordToggle(document.querySelector(sel)));
+    // Strength meter + generator + copy + live match check under the new-password field.
+    attachPasswordTools(document.querySelector("#pw-new"), { confirmInput: document.querySelector("#pw-confirm") });
     const pwError = document.querySelector("#pw-error");
     const showPwError = msg => { pwError.textContent = msg; pwError.style.display = "block"; };
     document.querySelector("#pw-update-btn").addEventListener("click", async () => {
@@ -254,7 +257,10 @@
         document.querySelector("#pw-current").value = "";
         document.querySelector("#pw-new").value = "";
         document.querySelector("#pw-confirm").value = "";
+        ["#pw-current", "#pw-new", "#pw-confirm"].forEach(sel => document.querySelector(sel).dispatchEvent(new Event("input", { bubbles: true })));
         showToast("Password updated.", { type: "success" });
+        // Let them double-check exactly what they set (masked, tap to reveal) and save it.
+        await showPasswordOnce(next, { title: "Password updated", note: "This is the password you just set." });
       } catch (err) {
         console.error("Password update failed:", err);
         const code = err.code || "";

@@ -1307,3 +1307,35 @@ body{ padding-bottom: 0; }
 
 .toast-outbid{ border-color: #ff5d7a; box-shadow: 0 14px 34px var(--shadow), 0 0 26px rgba(255,93,122,.4); }
 .toast-outbid .toast-icon{ background: rgba(255,93,122,.2); color:#ff5d7a; animation: urgent-blink 1s ease infinite; }
+
+/* ---- Password tools (password-tools.js) + safe reveal (common.js addPasswordToggle) ---- */
+.pw-field.is-revealed input{ border-color: var(--accent); }
+.pw-caps{
+  margin-top:6px; font-size:12px; font-weight:600; color:#ffb24d;
+  display:flex; align-items:center; gap:6px;
+}
+.pw-caps::before{ content:"\21EA"; font-size:14px; }
+.pw-caps[hidden]{ display:none; }
+.pw-tools{ margin-top:10px; }
+.pw-tools[hidden]{ display:none; }
+.pw-meter{ display:grid; grid-template-columns:repeat(4,1fr); gap:5px; }
+.pw-meter span{ height:5px; border-radius:99px; background: var(--bg-inset); border:1px solid var(--line); transition: background .2s ease, border-color .2s ease; }
+.pw-meter span.on.s1{ background:#ff5d7a; border-color:#ff5d7a; }
+.pw-meter span.on.s2{ background:#ffb24d; border-color:#ffb24d; }
+.pw-meter span.on.s3{ background:#c8e45a; border-color:#c8e45a; }
+.pw-meter span.on.s4{ background: var(--accent); border-color: var(--accent); }
+.pw-meter-row{ display:flex; justify-content:space-between; gap:10px; margin-top:5px; font-size:12px; min-height:16px; }
+.pw-meter-label{ font-weight:700; }
+.pw-meter-label.s1{ color:#ff5d7a; } .pw-meter-label.s2{ color:#ffb24d; } .pw-meter-label.s3{ color:#c8e45a; } .pw-meter-label.s4{ color: var(--accent); }
+.pw-meter-tip{ color: var(--text-muted); text-align:right; }
+.pw-tools-actions{ display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+.pw-tools-actions [hidden]{ display:none; }
+.pw-match.ok{ color: var(--accent); }
+.pw-match.bad{ color:#ff9ab3; }
+.pw-once-box{
+  margin-top:12px; padding:14px; border-radius: var(--radius-sm);
+  background: var(--bg-inset); border:1px dashed var(--line);
+  font-family: var(--font-mono); font-size:17px; letter-spacing:.06em;
+  text-align:center; word-break:break-all; user-select:none; -webkit-user-select:none;
+}
+.pw-once-box.is-shown{ user-select:text; -webkit-user-select:text; color: var(--accent); border-color: var(--accent); }

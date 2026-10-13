@@ -7,6 +7,7 @@ import { renderNav } from "./nav.js";
 import { escapeHtml, itemCardHtml, loaderHtml, loaderTrackHtml, timeLeftLabel, isEnded, CATEGORIES, CONDITIONS } from "./common.js";
 import { matchScore, hasPreferences } from "./recommend.js";
 import { startPresence } from "./presence.js";
+import { getRecent, clearRecent } from "./recent.js";
 import { showToast, initNotifications } from "./notifications.js";
 
 initTheme();
@@ -16,6 +17,12 @@ document.body.insertAdjacentHTML("beforeend", loaderTrackHtml("Loading auctions"
 const grid = document.querySelector("#grid");
 const recommendedGrid = document.querySelector("#recommended-grid");
 const watchGrid = document.querySelector("#watch-grid");
+const recentSection = document.querySelector("#recent-section");
+const recentGrid = document.querySelector("#recent-grid");
+document.querySelector("#clear-recent").addEventListener("click", () => {
+  clearRecent(me.uid);
+  render();
+});
 const noWatch = document.querySelector("#no-watch");
 const noResults = document.querySelector("#no-results");
 const noRecommended = document.querySelector("#no-recommended");
@@ -124,6 +131,14 @@ function render() {
   noWatch.style.display = watched.length ? "none" : "block";
   watchGrid.innerHTML = watched.map(it => itemCardHtml(it.id, it, false, true)).join("");
   attachCardHandlers(watchGrid);
+
+  // Recently viewed — the last few listings opened on this device, newest first.
+  const byId = new Map(items.map(it => [it.id, it]));
+  const recent = getRecent(me.uid).map(id => byId.get(id)).filter(it => it && !isEnded(it)).slice(0, 8);
+  recentSection.style.display = recent.length ? "block" : "none";
+  recentGrid.style.display = recent.length ? "grid" : "none";
+  recentGrid.innerHTML = recent.map(it => itemCardHtml(it.id, it, false, isSaved(it.id))).join("");
+  attachCardHandlers(recentGrid);
 
   grid.innerHTML = visible.map(it => itemCardHtml(it.id, it, false, isSaved(it.id))).join("");
   attachCardHandlers(grid);

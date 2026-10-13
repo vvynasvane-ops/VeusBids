@@ -48,14 +48,19 @@
         <form id="auth-form">
           <div id="name-field" style="display:none;">
             <label for="name">Display name</label>
-            <input id="name" type="text" placeholder="How sellers and bidders will see you" autocomplete="name">
+            <input id="name" type="text" placeholder="How sellers and bidders will see you" autocomplete="off" maxlength="40">
           </div>
 
           <label for="email">Email</label>
-          <input id="email" type="email" required autocomplete="email">
+          <input id="email" type="email" required autocomplete="email" data-autofill="allow">
 
           <label for="password">Password</label>
-          <input id="password" type="password" required autocomplete="current-password" minlength="6">
+          <input id="password" type="password" required autocomplete="current-password" minlength="6" data-autofill="allow">
+
+          <div id="confirm-field" style="display:none;">
+            <label for="password-confirm">Confirm password</label>
+            <input id="password-confirm" type="password" autocomplete="new-password" minlength="6" placeholder="Type it once more">
+          </div>
 
           <p id="forgot-row" style="text-align:right; margin:8px 0 0;">
             <a href="#" id="forgot-link" style="font-size:12px;">Forgot password?</a>

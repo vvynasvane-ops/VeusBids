@@ -39,7 +39,12 @@ export function requireAuth() {
   return new Promise((resolve) => {
     onAuthStateChanged(auth, (user) => {
       if (!user) {
-        window.location.href = "index.html";
+        // Remember where they were headed (e.g. a shared listing link) so
+        // logging in lands them there instead of dropping the page.
+        const here = window.location.pathname.split("/").pop() + window.location.search;
+        window.location.href = here && !here.startsWith("index.html")
+          ? `index.html?next=${encodeURIComponent(here)}`
+          : "index.html";
       } else {
         resolve(user);
       }

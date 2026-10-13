@@ -4,6 +4,7 @@ import {
   doc, setDoc, getDoc, serverTimestamp
 } from "./firebase-init.js";
 import { loaderBlobHtml, addPasswordToggle } from "./common.js";
+import { attachPasswordTools, showPasswordOnce } from "./password-tools.js";
 import { showToast } from "./notifications.js";
 
 const form = document.querySelector("#auth-form");
@@ -13,14 +14,38 @@ const nameField = document.querySelector("#name-field");
 const submitBtn = document.querySelector("#auth-submit");
 const errorBox = document.querySelector("#auth-error");
 const forgotLink = document.querySelector("#forgot-link");
-addPasswordToggle(document.querySelector("#password"));
+const passwordInput = document.querySelector("#password");
+const confirmField = document.querySelector("#confirm-field");
+const confirmInput = document.querySelector("#password-confirm");
+addPasswordToggle(passwordInput);
+addPasswordToggle(confirmInput);
+// Strength meter, generator, copy, and a live "passwords match" check — shown only while signing up.
+const pwTools = attachPasswordTools(passwordInput, { confirmInput });
+pwTools.setVisible(false);
 let mode = "login";
+// True from the moment account creation starts until the "here's your password"
+// sheet is dismissed — stops onAuthStateChanged from redirecting underneath it.
+let signingUp = false;
+
+/** Where to go after signing in: the page they were trying to reach (shared
+ * listing links, for instance) if it's a plain same-site .html page, else Browse. */
+function destination() {
+  const next = new URLSearchParams(window.location.search).get("next") || "";
+  return /^[a-z0-9_-]+\.html(\?[a-zA-Z0-9_=&%.-]*)?$/i.test(next) ? next : "browse.html";
+}
 
 function setMode(next) {
   mode = next;
   tabLogin.classList.toggle("active", mode === "login");
   tabSignup.classList.toggle("active", mode === "signup");
   nameField.style.display = mode === "signup" ? "block" : "none";
+  confirmField.style.display = mode === "signup" ? "block" : "none";
+  confirmInput.required = mode === "signup";
+  // Tell the browser which kind of password this is, so a signup never
+  // gets a saved one injected and a login still can.
+  passwordInput.setAttribute("autocomplete", mode === "signup" ? "new-password" : "current-password");
+  pwTools.setVisible(mode === "signup");
+  if (mode === "login") { confirmInput.value = ""; passwordInput.dispatchEvent(new Event("vb:hide-password")); }
   submitBtn.textContent = mode === "signup" ? "Create account" : "Log in";
   errorBox.textContent = "";
 }
@@ -55,18 +80,27 @@ form.addEventListener("submit", async (e) => {
   const email = document.querySelector("#email").value.trim();
   const password = document.querySelector("#password").value;
   const name = document.querySelector("#name").value.trim();
+  if (mode === "signup" && password !== confirmInput.value) {
+    errorBox.textContent = "The two passwords don't match.";
+    return;
+  }
   const originalLabel = submitBtn.textContent;
   submitBtn.disabled = true;
   submitBtn.innerHTML = loaderBlobHtml();
   try {
     if (mode === "signup") {
+      signingUp = true;
       const cred = await createUserWithEmailAndPassword(auth, email, password);
       await ensureProfileDoc(cred.user, name);
+      // Let them see exactly what they set (masked, reveal on tap) before moving on.
+      await showPasswordOnce(password, { title: "Account created", note: "Here's the password you just set." });
+      signingUp = false;
     } else {
       await signInWithEmailAndPassword(auth, email, password);
     }
-    window.location.href = "browse.html";
+    window.location.href = destination();
   } catch (err) {
+    signingUp = false;
     errorBox.textContent = friendlyError(err);
   } finally {
     submitBtn.disabled = false;
@@ -83,7 +117,7 @@ document.querySelector("#google-btn").addEventListener("click", async (e) => {
   try {
     const cred = await signInWithPopup(auth, googleProvider);
     await ensureProfileDoc(cred.user);
-    window.location.href = "browse.html";
+    window.location.href = destination();
   } catch (err) {
     errorBox.textContent = friendlyError(err);
   } finally {
@@ -116,7 +150,7 @@ function friendlyError(err) {
 
 // If already signed in, skip straight past the auth screen.
 onAuthStateChanged(auth, (user) => {
-  if (user) window.location.href = "browse.html";
+  if (user && !signingUp) window.location.href = destination();
 });
 
 // Land here via index.html?deleted=1 right after Settings' Danger zone

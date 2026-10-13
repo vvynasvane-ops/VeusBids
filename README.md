@@ -287,3 +287,37 @@ already proved out:
   corners instead of HostelHive's rounded ones.
 - `firebase-config.js` was reset to placeholders — this needs its own
   Firebase project, not HostelHive's or love-wonders'.
+
+## 10. Autofill guard, password tools, and extras
+
+**Autofill guard (`autofill-guard.js`)** — loaded automatically by `common.js`,
+so every page gets it. Stops browsers/password managers from dropping a saved
+email or password into fields that shouldn't hold one (display name, phone,
+search bars, bid amount, PIN boxes, "type DELETE", the Danger-zone password).
+It stacks `autocomplete` values, password-manager opt-out hints, throw-away
+`name`s, a read-only-until-touched lock, and a tripwire that wipes a field the
+instant a browser fills it behind your back. Only fields marked
+`data-autofill="allow"` (the real log-in email + password) are left alone.
+New inputs built later (chat modals, the bid form) are guarded automatically.
+
+**Password tools (`password-tools.js`)**
+- Strength meter, one-tap "Generate strong password" (crypto-random, no
+  look-alike characters), Copy (clipboard clears after 30s), and a live
+  "passwords match" check — on Sign up and Settings → Password & security.
+- Sign up now has a Confirm password field.
+- **Viewing a password safely:** the eye toggle re-masks after 15s, when the tab
+  is hidden, or on submit. After sign-up or a password change a private sheet shows
+  what was just set (masked, tap to reveal, Copy). Passwords can't be shown later:
+  Firebase stores only a one-way hash, which is the safe design, so the sheet
+  appears once and is wiped on close. Forgot it? Use "Forgot password?".
+- Caps Lock warning under every password field.
+
+**Three new features**
+1. **Share listing** (item page) — native share sheet, or copies the link. Logged-out
+   recipients are sent to log in and land back on the listing (`?next=` handling in
+   `firebase-init.js` / `auth.js`).
+2. **Remind me** (item page) — downloads an `.ics` calendar event at the auction's end
+   time with a 15-minute alert.
+3. **Recently viewed** (Browse) — last listings you opened on this device
+   (`recent.js`, localStorage only), with a Clear button.
+

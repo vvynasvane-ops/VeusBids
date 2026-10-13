@@ -1,3 +1,8 @@
+import { initAutofillGuard } from "./autofill-guard.js";
+
+// Every page that loads common.js gets the autofill guard — see autofill-guard.js.
+initAutofillGuard();
+
 const EYE_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>`;
 const EYE_OFF_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a21.8 21.8 0 0 1 5.06-6.06M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a21.8 21.8 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
 
@@ -8,9 +13,17 @@ const EYE_OFF_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
  * inserts a button that flips the field between type="password" and
  * type="text" — the actual reveal, not just a masked re-display, since the
  * underlying input value never changes, only how it's rendered.
+ *
+ * Revealing is deliberately temporary, so a password can't be left sitting
+ * on screen by accident: it re-masks itself after 15 seconds, the moment the
+ * tab/app is hidden or the window loses focus, and when the form is submitted.
+ * A Caps Lock warning also appears under the field while Caps Lock is on —
+ * the most common reason a password "doesn't match" what the person meant.
+ *
  * Idempotent (safe to call twice on the same input) and a no-op if the
  * element doesn't exist, so call sites don't need to guard for either.
  */
+const REVEAL_MS = 15000;
 export function addPasswordToggle(input) {
   if (!input || input.dataset.pwToggleAttached) return;
   input.dataset.pwToggleAttached = "1";
@@ -22,16 +35,46 @@ export function addPasswordToggle(input) {
   btn.type = "button";
   btn.className = "pw-toggle";
   btn.setAttribute("aria-label", "Show password");
+  btn.setAttribute("aria-pressed", "false");
   btn.innerHTML = EYE_ICON;
   wrap.appendChild(btn);
+
+  const caps = document.createElement("div");
+  caps.className = "pw-caps";
+  caps.hidden = true;
+  caps.textContent = "Caps Lock is on";
+  wrap.insertAdjacentElement("afterend", caps);
+
+  let timer = null;
+  const setRevealed = (on) => {
+    clearTimeout(timer);
+    input.type = on ? "text" : "password";
+    btn.innerHTML = on ? EYE_OFF_ICON : EYE_ICON;
+    btn.setAttribute("aria-label", on ? "Hide password" : "Show password");
+    btn.setAttribute("aria-pressed", on ? "true" : "false");
+    wrap.classList.toggle("is-revealed", on);
+    if (on) timer = setTimeout(() => setRevealed(false), REVEAL_MS);
+  };
   btn.addEventListener("click", () => {
-    const revealed = input.type === "text";
-    input.type = revealed ? "password" : "text";
-    btn.innerHTML = revealed ? EYE_ICON : EYE_OFF_ICON;
-    btn.setAttribute("aria-label", revealed ? "Show password" : "Hide password");
+    setRevealed(input.type !== "text");
     // Keep focus + caret in the field after the tap, instead of losing focus to the button.
     input.focus();
   });
+  // Re-mask whenever the person looks away or submits.
+  document.addEventListener("visibilitychange", () => { if (document.hidden) setRevealed(false); });
+  window.addEventListener("blur", () => setRevealed(false));
+  input.form?.addEventListener("submit", () => setRevealed(false));
+  // Lets other code (password-tools, modals) re-mask programmatically.
+  input.addEventListener("vb:hide-password", () => setRevealed(false));
+  input.addEventListener("vb:show-password", () => setRevealed(true));
+
+  const syncCaps = (e) => {
+    const on = !!(e.getModifierState && e.getModifierState("CapsLock"));
+    caps.hidden = !on;
+  };
+  input.addEventListener("keydown", syncCaps);
+  input.addEventListener("keyup", syncCaps);
+  input.addEventListener("blur", () => { caps.hidden = true; });
 }
 
 /** The standard category list — shared by the Browse filters and the

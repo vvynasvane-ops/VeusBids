@@ -11,6 +11,7 @@ import {
 } from "./common.js";
 import { startPresence } from "./presence.js";
 import { showToast, initNotifications } from "./notifications.js";
+import { rememberViewed } from "./recent.js";
 
 initTheme();
 renderNav(""); // no single nav tab owns the item detail page
@@ -70,6 +71,7 @@ async function load() {
 
   if (item.ownerUid !== me.uid) {
     updateDoc(doc(db, "items", itemId), { viewCount: increment(1) }).catch(() => {});
+    rememberViewed(me.uid, itemId); // powers "Recently viewed" on Browse
   }
 
   const ownerSnap = await getDoc(doc(db, "users", item.ownerUid)).catch(() => null);
@@ -126,6 +128,8 @@ function renderShell() {
 
         <div style="display:flex; gap:10px; align-items:center; margin-top:10px; flex-wrap:wrap;">
           ${!isOwner ? `<button type="button" class="like-btn ${isSaved() ? "liked" : ""}" id="detail-like-btn" title="${isSaved() ? "Remove from Watchlist" : "Watch"}">${isSaved() ? "&#10084;" : "&#9825;"}</button>` : ""}
+          <button type="button" id="share-btn" class="btn subtle small">&#128279; Share</button>
+          <button type="button" id="remind-btn" class="btn subtle small">&#128197; Remind me</button>
           <button type="button" id="feedback-btn" class="btn subtle small">&#10024; Leave feedback</button>
         </div>
         <div id="feedback-picker" class="appreciate-picker" hidden></div>
@@ -155,6 +159,9 @@ function renderShell() {
     document.querySelector("#detail-like-btn")?.addEventListener("click", toggleSave);
   }
 
+  document.querySelector("#share-btn").addEventListener("click", shareListing);
+  document.querySelector("#remind-btn").addEventListener("click", downloadReminder);
+
   const feedbackBtn = document.querySelector("#feedback-btn");
   const feedbackPicker = document.querySelector("#feedback-picker");
   feedbackBtn.addEventListener("click", () => {
@@ -167,6 +174,62 @@ function renderShell() {
       });
     }
   });
+}
+
+/** Share this listing: the phone's native share sheet where there is one,
+ * otherwise the link goes to the clipboard. Someone who isn't signed in yet
+ * is sent to log in first and then straight back here (see requireAuth). */
+async function shareListing() {
+  const url = new URL(`item.html?id=${encodeURIComponent(itemId)}`, window.location.href).href;
+  const title = item.title || "Auction on VeusBid";
+  const text = `${title} — currently ${formatMoney(item.currentBid || item.startingPrice || 0)} on VeusBid`;
+  if (navigator.share) {
+    try { await navigator.share({ title, text, url }); } catch { /* cancelled */ }
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    showToast("Listing link copied.", { type: "success" });
+  } catch {
+    window.prompt("Copy this link:", url);
+  }
+}
+
+/** Escapes text for an .ics field (RFC 5545): backslash, semicolon, comma, newline. */
+function icsText(s) {
+  return String(s || "").replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
+}
+function icsDate(ms) {
+  return new Date(ms).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+}
+
+/** "Remind me": downloads a calendar event (.ics) at the auction's end time with a
+ * 15-minute alert, so a bid can be placed before it closes. Opens in any calendar app. */
+function downloadReminder() {
+  if (!item.endTime || isEnded(item)) { showToast("This auction has already ended.", { type: "info" }); return; }
+  const url = new URL(`item.html?id=${encodeURIComponent(itemId)}`, window.location.href).href;
+  const lines = [
+    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//VeusBid//Auction Reminder//EN", "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
+    "BEGIN:VEVENT",
+    `UID:vb-${itemId}@veusbid`,
+    `DTSTAMP:${icsDate(Date.now())}`,
+    `DTSTART:${icsDate(item.endTime)}`,
+    `DTEND:${icsDate(item.endTime + 15 * 60 * 1000)}`,
+    `SUMMARY:${icsText(`Auction ends: ${item.title || "VeusBid item"}`)}`,
+    `DESCRIPTION:${icsText(`Current bid ${formatMoney(item.currentBid || item.startingPrice || 0)}. Open the listing: ${url}`)}`,
+    `URL:${url}`,
+    "BEGIN:VALARM", "TRIGGER:-PT15M", "ACTION:DISPLAY", "DESCRIPTION:Auction ends in 15 minutes", "END:VALARM",
+    "END:VEVENT", "END:VCALENDAR"
+  ];
+  const blob = new Blob([lines.join("\r\n")], { type: "text/calendar;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `veusbid-${(item.code || itemId).toString().replace(/[^\w-]/g, "")}.ics`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  showToast("Reminder saved — open it to add it to your calendar.", { type: "success" });
 }
 
 /** Updates just the main image + strip highlighting — no full re-render, so

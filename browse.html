@@ -50,11 +50,15 @@
     <div id="filters-panel" class="card" style="display:none; margin-bottom:8px;">
       <div class="filters-card">
         <div>
-          <label for="f-price-min">Bid from ($)</label>
+          <label for="f-currency">Currency</label>
+          <select id="f-currency"></select>
+        </div>
+        <div>
+          <label for="f-price-min" id="f-price-min-label">Bid from ($)</label>
           <input id="f-price-min" type="number" min="0" step="5">
         </div>
         <div>
-          <label for="f-price-max">Bid to ($)</label>
+          <label for="f-price-max" id="f-price-max-label">Bid to ($)</label>
           <input id="f-price-max" type="number" min="0" step="5">
         </div>
         <div>

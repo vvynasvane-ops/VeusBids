@@ -9,6 +9,7 @@ import { matchScore, hasPreferences } from "./recommend.js";
 import { startPresence } from "./presence.js";
 import { getRecent, clearRecent } from "./recent.js";
 import { showToast, initNotifications } from "./notifications.js";
+import { currencyLabel, currencyOptionsHtml, getCurrency, convertCurrency, toUsd, preferredCurrency, rememberCurrency } from "./currency.js";
 
 initTheme();
 renderNav("browse");
@@ -44,7 +45,7 @@ conditionsBox.innerHTML = CONDITIONS.map((c, i) => `
 `).join("");
 
 let me, myData, items = [];
-let filters = { priceMin: null, priceMax: null, category: "", conditions: [], endingSoon: false, hasPhoto: false };
+let filters = { priceMin: null, priceMax: null, currency: "", category: "", conditions: [], endingSoon: false, hasPhoto: false };
 
 async function load() {
   grid.innerHTML = loaderHtml("Fetching live auctions");
@@ -71,7 +72,10 @@ async function load() {
 }
 
 function passesFilters(it) {
-  const price = it.currentBid || it.startingPrice || 0;
+  // "" = any currency: compare after an approximate conversion into the viewer's currency.
+  if (filters.currency && getCurrency(it.currency).code !== filters.currency) return false;
+  const raw = it.currentBid || it.startingPrice || 0;
+  const price = filters.currency ? raw : convertCurrency(raw, it.currency, preferredCurrency());
   if (filters.priceMin && price < filters.priceMin) return false;
   if (filters.priceMax && price > filters.priceMax) return false;
   if (filters.category && it.category !== filters.category) return false;
@@ -90,9 +94,9 @@ function matchesSearch(it, term) {
 function sortList(list) {
   const sorted = [...list];
   if (sortSelect.value === "price-asc") {
-    sorted.sort((a, b) => (a.currentBid || a.startingPrice || 0) - (b.currentBid || b.startingPrice || 0));
+    sorted.sort((a, b) => toUsd(a.currentBid || a.startingPrice || 0, a.currency) - toUsd(b.currentBid || b.startingPrice || 0, b.currency));
   } else if (sortSelect.value === "price-desc") {
-    sorted.sort((a, b) => (b.currentBid || b.startingPrice || 0) - (a.currentBid || a.startingPrice || 0));
+    sorted.sort((a, b) => toUsd(b.currentBid || b.startingPrice || 0, b.currency) - toUsd(a.currentBid || a.startingPrice || 0, a.currency));
   } else if (sortSelect.value === "ending-soon") {
     sorted.sort((a, b) => (a.endTime || Infinity) - (b.endTime || Infinity));
   } else if (sortSelect.value === "most-bids") {
@@ -183,8 +187,23 @@ sortSelect.addEventListener("change", render);
 filtersToggleBtn.addEventListener("click", () => {
   filtersPanel.style.display = filtersPanel.style.display === "none" ? "block" : "none";
 });
+// Currency filter: "Any" (converted to the viewer's currency) or one specific currency.
+const fCurrencyEl = document.querySelector("#f-currency");
+fCurrencyEl.innerHTML = `<option value="">Any currency (\u2248 converted to ${preferredCurrency()})</option>`
+  + currencyOptionsHtml("").replace(" selected", "");
+function updateFilterPriceLabels() {
+  const code = fCurrencyEl.value;
+  const sym = getCurrency(code || preferredCurrency()).symbol.trim();
+  const tag = code ? sym : `\u2248 ${sym}`;
+  document.querySelector("#f-price-min-label").textContent = `Bid from (${tag})`;
+  document.querySelector("#f-price-max-label").textContent = `Bid to (${tag})`;
+}
+fCurrencyEl.addEventListener("change", updateFilterPriceLabels);
+updateFilterPriceLabels();
+
 function readFiltersFromForm() {
   return {
+    currency: document.querySelector("#f-currency").value,
     priceMin: Number(document.querySelector("#f-price-min").value) || null,
     priceMax: Number(document.querySelector("#f-price-max").value) || null,
     category: categorySelect.value,
@@ -194,6 +213,8 @@ function readFiltersFromForm() {
   };
 }
 function writeFiltersToForm(f) {
+  document.querySelector("#f-currency").value = f.currency || "";
+  updateFilterPriceLabels();
   document.querySelector("#f-price-min").value = f.priceMin || "";
   document.querySelector("#f-price-max").value = f.priceMax || "";
   categorySelect.value = f.category || "";
@@ -207,16 +228,18 @@ applyFiltersBtn.addEventListener("click", async () => {
   render();
   // Filters double as the member's saved search — persisting them is what
   // powers "Recommended for you" here and the new-listing match notifications.
-  myData.preferences = { priceMin: filters.priceMin, priceMax: filters.priceMax, category: filters.category, conditions: filters.conditions };
+  myData.preferences = { priceMin: filters.priceMin, priceMax: filters.priceMax, priceCurrency: filters.currency || "", category: filters.category, conditions: filters.conditions };
   try { await updateDoc(doc(db, "users", me.uid), { preferences: myData.preferences }); } catch (err) { console.error("Saving search filters failed:", err); }
 });
 clearFiltersBtn.addEventListener("click", () => {
   ["#f-price-min", "#f-price-max"].forEach(sel => (document.querySelector(sel).value = ""));
+  document.querySelector("#f-currency").value = "";
+  updateFilterPriceLabels();
   categorySelect.value = "";
   conditionsBox.querySelectorAll("input").forEach(cb => { cb.checked = false; });
   document.querySelector("#f-ending-soon").checked = false;
   document.querySelector("#f-has-photo").checked = false;
-  filters = { priceMin: null, priceMax: null, category: "", conditions: [], endingSoon: false, hasPhoto: false };
+  filters = { priceMin: null, priceMax: null, currency: "", category: "", conditions: [], endingSoon: false, hasPhoto: false };
   render();
 });
 

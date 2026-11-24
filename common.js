@@ -1,4 +1,5 @@
 import { initAutofillGuard } from "./autofill-guard.js";
+import { formatCurrency } from "./currency.js";
 
 // Every page that loads common.js gets the autofill guard — see autofill-guard.js.
 initAutofillGuard();
@@ -107,9 +108,10 @@ export function generateListingCode() {
   return `VB-${n}`;
 }
 
-/** Formats a bid/price amount as currency (USD by default — see settings for a currency note). */
-export function formatMoney(n) {
-  return "$" + Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
+/** Formats a bid/price amount in the listing's own currency (KSh 12,500, $40, \u20A61,500...).
+ * `code` is the item's `currency` field; leave it off for USD (legacy listings). */
+export function formatMoney(n, code) {
+  return formatCurrency(n, code);
 }
 
 /** True if an item's endTime (ms) has passed. */
@@ -261,7 +263,7 @@ export function tagsHtml(tags) {
 export function itemCardHtml(itemId, it, recommended, saved) {
   const ended = isEnded(it);
   const current = it.currentBid || it.startingPrice || 0;
-  const priceLabel = formatMoney(current);
+  const priceLabel = formatMoney(current, it.currency);
   const bidCount = it.bidCount || 0;
   const urgent = !ended && isEndingSoon(it.endTime);
   return `

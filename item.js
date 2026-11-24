@@ -12,6 +12,7 @@ import {
 import { startPresence } from "./presence.js";
 import { showToast, initNotifications } from "./notifications.js";
 import { rememberViewed } from "./recent.js";
+import { getCurrency, flagOf, convertCurrency, preferredCurrency, scaleIncrement, toUsd } from "./currency.js";
 
 initTheme();
 renderNav(""); // no single nav tab owns the item detail page
@@ -37,17 +38,26 @@ let lastMessagingSignature = null;
 /** The bump required above the current price — bigger increments at higher
  * price points, same shape auction houses actually use, so a $6 bid can't
  * follow a $50,000 one. */
-function minIncrement(amount) {
-  if (amount < 20) return 1;
-  if (amount < 100) return 5;
-  if (amount < 500) return 10;
-  if (amount < 1000) return 25;
-  if (amount < 5000) return 50;
-  return 100;
+function minIncrement(amount, code) {
+  // The ladder is judged on the USD-equivalent price, then scaled back into the listing's
+  // currency (KSh 500 / 1,000 / 2,500 instead of $5 / $10 / $25). USD is unchanged.
+  const usd = toUsd(amount, code);
+  let usdStep;
+  if (usd < 20) usdStep = 1;
+  else if (usd < 100) usdStep = 5;
+  else if (usd < 500) usdStep = 10;
+  else if (usd < 1000) usdStep = 25;
+  else if (usd < 5000) usdStep = 50;
+  else usdStep = 100;
+  return scaleIncrement(usdStep, code);
 }
 function minNextBid(it) {
   const current = it.currentBid || it.startingPrice || 0;
-  return it.bidCount ? current + minIncrement(current) : current;
+  return it.bidCount ? current + minIncrement(current, it.currency) : current;
+}
+/** Smallest typed step for the bid box: whole units for zero-decimal currencies, cents otherwise. */
+function bidStep(it) {
+  return getCurrency(it.currency).decimals === 0 ? 1 : "any";
 }
 
 async function load() {
@@ -182,7 +192,7 @@ function renderShell() {
 async function shareListing() {
   const url = new URL(`item.html?id=${encodeURIComponent(itemId)}`, window.location.href).href;
   const title = item.title || "Auction on VeusBid";
-  const text = `${title} — currently ${formatMoney(item.currentBid || item.startingPrice || 0)} on VeusBid`;
+  const text = `${title} — currently ${formatMoney(item.currentBid || item.startingPrice || 0, item.currency)} on VeusBid`;
   if (navigator.share) {
     try { await navigator.share({ title, text, url }); } catch { /* cancelled */ }
     return;
@@ -216,7 +226,7 @@ function downloadReminder() {
     `DTSTART:${icsDate(item.endTime)}`,
     `DTEND:${icsDate(item.endTime + 15 * 60 * 1000)}`,
     `SUMMARY:${icsText(`Auction ends: ${item.title || "VeusBid item"}`)}`,
-    `DESCRIPTION:${icsText(`Current bid ${formatMoney(item.currentBid || item.startingPrice || 0)}. Open the listing: ${url}`)}`,
+    `DESCRIPTION:${icsText(`Current bid ${formatMoney(item.currentBid || item.startingPrice || 0, item.currency)}. Open the listing: ${url}`)}`,
     `URL:${url}`,
     "BEGIN:VALARM", "TRIGGER:-PT15M", "ACTION:DISPLAY", "DESCRIPTION:Auction ends in 15 minutes", "END:VALARM",
     "END:VEVENT", "END:VCALENDAR"
@@ -259,6 +269,16 @@ function updateLikeButton() {
  * changes the price, the bid count, and the minimum next bid) — so, same
  * spirit as the chat draft below, any bid amount someone's mid-typing is
  * preserved across the rebuild instead of silently vanishing. */
+/** Flag + code, plus an approximate price in the viewer's own currency when it differs. */
+function approxLineHtml(amount) {
+  const code = getCurrency(item.currency).code;
+  const mine = preferredCurrency();
+  const approx = mine !== code
+    ? ` &middot; &asymp; ${escapeHtml(formatMoney(convertCurrency(amount, code, mine), mine))}`
+    : "";
+  return `<div class="muted" style="font-size:12px;">${flagOf(code)} ${escapeHtml(code)}${approx}</div>`;
+}
+
 function updateAuctionPanel() {
   const mount = document.querySelector("#auction-panel-mount");
   if (!mount) return;
@@ -275,7 +295,8 @@ function updateAuctionPanel() {
   mount.innerHTML = `
     <div class="card auction-panel ${isEndingSoon(item.endTime) && !ended ? "urgent" : ""}">
       <div class="auction-panel-label">${ended ? (item.bidCount ? "WINNING BID" : "CURRENT PRICE") : "CURRENT BID"}</div>
-      <div class="auction-panel-price">${formatMoney(current)}</div>
+      <div class="auction-panel-price">${formatMoney(current, item.currency)}</div>
+      ${approxLineHtml(current)}
       <div class="auction-panel-meta">
         <span>${item.bidCount || 0} bid${item.bidCount === 1 ? "" : "s"}</span>
         <span id="item-countdown" class="${ended ? "ended-txt" : isEndingSoon(item.endTime) ? "urgent-txt" : ""}">${ended ? "AUCTION ENDED" : timeLeftLabel(item.endTime).toUpperCase()}</span>
@@ -290,8 +311,8 @@ function updateAuctionPanel() {
         </p>
       ` : `
         <form id="bid-form" style="margin-top:14px;">
-          <label for="bid-amount">Your bid (min ${formatMoney(minNextBid(item))})</label>
-          <input id="bid-amount" type="number" min="${minNextBid(item)}" step="1" placeholder="${minNextBid(item)}">
+          <label for="bid-amount">Your bid in ${item.currency} (min ${formatMoney(minNextBid(item), item.currency)})</label>
+          <input id="bid-amount" type="number" min="${minNextBid(item)}" step="${bidStep(item)}" placeholder="${minNextBid(item)}">
           <button type="submit" class="btn block" style="margin-top:10px;">${item.bidCount ? "Place bid" : "Bid now — be the first"}</button>
         </form>
         ${item.reservePrice ? `<p class="field-hint">Reserve price ${current >= item.reservePrice ? "met" : "not yet met"}.</p>` : ""}
@@ -395,7 +416,7 @@ function updateMessagingSection() {
 
     document.querySelector("#request-contact-btn").addEventListener("click", () => {
       insertChatTemplate(
-        `Hi! Congrats on winning "${item.title || "the item"}" for ${formatMoney(item.currentBid || item.startingPrice)}. Could you send me your delivery details — full name, phone number, and address (or preferred pickup spot) — so I can get this to you?`
+        `Hi! Congrats on winning "${item.title || "the item"}" for ${formatMoney(item.currentBid || item.startingPrice, item.currency)}. Could you send me your delivery details — full name, phone number, and address (or preferred pickup spot) — so I can get this to you?`
       );
     });
 
@@ -478,7 +499,7 @@ async function onPlaceBid(e) {
   const amount = Number(input.value);
   const min = minNextBid(item);
   if (!amount || amount < min) {
-    showToast(`Bid must be at least ${formatMoney(min)}.`, { type: "error" });
+    showToast(`Bid must be at least ${formatMoney(min, item.currency)}.`, { type: "error" });
     return;
   }
   const submitBtn = e.target.querySelector("button[type=submit]");
@@ -520,7 +541,7 @@ function renderBidHistory(bids) {
   el.innerHTML = `<div class="appreciation-list">${bids.map(b => `
     <div class="appreciation-item">
       <div class="appreciation-from">${escapeHtml(b.bidderName || "A bidder")}${b.bidderUid === me.uid ? " (you)" : ""}</div>
-      <div>${formatMoney(b.amount)}</div>
+      <div>${formatMoney(b.amount, item.currency)}</div>
     </div>`).join("")}</div>`;
 }
 
@@ -543,7 +564,7 @@ function watchLive() {
     const prevSignature = JSON.stringify(relevantSnapshot(item));
     item = { id: snap.id, ...snap.data() };
     if (prevBidder === me.uid && item.currentBidderUid && item.currentBidderUid !== me.uid) {
-      showToast(`Outbid! New price: ${formatMoney(item.currentBid)}`, { type: "outbid", duration: 5000 });
+      showToast(`Outbid! New price: ${formatMoney(item.currentBid, item.currency)}`, { type: "outbid", duration: 5000 });
     }
     if (item.ownerUid === me.uid && isEnded(item) && item.currentBidderUid && item.currentBidderUid !== prevBidder) {
       const winnerSnap = await getDoc(doc(db, "users", item.currentBidderUid)).catch(() => null);

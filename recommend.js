@@ -2,6 +2,8 @@
 // Each stated search preference that an item fits adds points; a blank
 // or unset preference simply doesn't filter anything out.
 
+import { convertCurrency, preferredCurrency } from "./currency.js";
+
 function norm(v) {
   return (v || "").toString().trim().toLowerCase();
 }
@@ -12,7 +14,9 @@ export function matchScore(myPrefs, item) {
 
   const priceMin = Number(myPrefs.priceMin) || 0;
   const priceMax = Number(myPrefs.priceMax) || 0;
-  const price = item.currentBid || item.startingPrice || 0;
+  // The member's range is in the currency they filtered in (else their own); convert the item to it.
+  const rangeCurrency = myPrefs.priceCurrency || preferredCurrency();
+  const price = convertCurrency(item.currentBid || item.startingPrice || 0, item.currency, rangeCurrency);
   if (price && (priceMin || priceMax)) {
     const okMin = !priceMin || price >= priceMin;
     const okMax = !priceMax || price <= priceMax;

@@ -6,6 +6,7 @@ import { fileToCompressedDataURL } from "./img-utils.js";
 import { initTheme } from "./theme.js";
 import { renderNav } from "./nav.js";
 import { generateListingCode, loaderTrackHtml, loaderPhotoHtml, escapeHtml, formatMoney, timeLeftLabel, isEnded, CATEGORIES, CONDITIONS, placeholderPhoto } from "./common.js";
+import { currencyOptionsHtml, getCurrency, preferredCurrency, rememberCurrency } from "./currency.js";
 import { startPresence } from "./presence.js";
 import { showToast, savedToast, initNotifications } from "./notifications.js";
 
@@ -30,6 +31,9 @@ const listingFormTitle = document.querySelector("#listing-form-title");
 const iTitleEl = document.querySelector("#i-title");
 const iCategoryEl = document.querySelector("#i-category");
 const iConditionEl = document.querySelector("#i-condition");
+const iCurrencyEl = document.querySelector("#i-currency");
+const iStartLabelEl = document.querySelector("#i-start-label");
+const iReserveLabelEl = document.querySelector("#i-reserve-label");
 const iStartPriceEl = document.querySelector("#i-start-price");
 const iReserveEl = document.querySelector("#i-reserve");
 const durationField = document.querySelector("#duration-field");
@@ -48,6 +52,16 @@ const noListings = document.querySelector("#no-listings");
 
 iCategoryEl.innerHTML = CATEGORIES.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
 iConditionEl.innerHTML = CONDITIONS.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
+
+// Currency picker: defaults to the last one used, then the browser's region, then USD.
+function updatePriceLabels() {
+  const c = getCurrency(iCurrencyEl.value);
+  iStartLabelEl.textContent = `Starting price (${c.symbol.trim()})`;
+  iReserveLabelEl.textContent = `Reserve price (${c.code}, optional)`;
+}
+iCurrencyEl.innerHTML = currencyOptionsHtml(preferredCurrency());
+iCurrencyEl.addEventListener("change", updatePriceLabels);
+updatePriceLabels();
 
 let user, userRef, pendingPhotoURL = null, myListings = [], editingId = null, pendingPhotos = [];
 
@@ -139,7 +153,7 @@ function renderMyListings() {
       <div class="person-meta">
         <div class="person-name">${escapeHtml(it.title || "Untitled item")}</div>
         <div class="person-sub auction-price-row">
-          <span class="auction-current-price">${formatMoney(it.currentBid || it.startingPrice)}</span>
+          <span class="auction-current-price">${formatMoney(it.currentBid || it.startingPrice, it.currency)}</span>
           <span class="auction-bid-count">${it.bidCount || 0} bid${it.bidCount === 1 ? "" : "s"}</span>
         </div>
         <div class="person-sub">${it.viewCount || 0} view${it.viewCount === 1 ? "" : "s"} · Listing ${escapeHtml(it.code || "")}</div>
@@ -322,6 +336,7 @@ function resetListingForm() {
   listingFormTitle.textContent = "List an item";
   saveListingBtn.textContent = "Start auction";
   cancelEditBtn.style.display = "none";
+  iCurrencyEl.value = preferredCurrency(); updatePriceLabels();
   iTitleEl.value = ""; iStartPriceEl.value = ""; iReserveEl.value = ""; iLocationEl.value = "";
   iDescriptionEl.value = ""; iContactEl.value = ""; iCategoryEl.value = CATEGORIES[0]; iConditionEl.value = CONDITIONS[0];
   iDurationValueEl.value = "60";
@@ -343,6 +358,7 @@ function startEdit(id) {
   iTitleEl.value = it.title || "";
   iCategoryEl.value = it.category || CATEGORIES[0];
   iConditionEl.value = it.condition || CONDITIONS[0];
+  iCurrencyEl.value = getCurrency(it.currency).code; updatePriceLabels();
   iStartPriceEl.value = it.startingPrice || "";
   iReserveEl.value = it.reservePrice ?? "";
   iLocationEl.value = it.location || "";
@@ -362,17 +378,19 @@ saveListingBtn.addEventListener("click", async () => {
   const title = iTitleEl.value.trim();
   const startPrice = Number(iStartPriceEl.value);
   if (!title) { showToast("Give the item a title first.", { type: "error" }); return; }
-  if (!startPrice || startPrice <= 0) { showToast("Set a starting price above $0.", { type: "error" }); return; }
+  if (!startPrice || startPrice <= 0) { showToast(`Set a starting price above ${formatMoney(0, iCurrencyEl.value)}.`, { type: "error" }); return; }
   if (!editingId && (!iDurationValueEl.value || Number(iDurationValueEl.value) <= 0)) {
     showToast("Set an auction length greater than 0.", { type: "error" });
     return;
   }
+  rememberCurrency(iCurrencyEl.value);
   saveListingBtn.disabled = true;
   try {
     const fields = {
       title,
       category: iCategoryEl.value,
       condition: iConditionEl.value,
+      currency: getCurrency(iCurrencyEl.value).code,
       startingPrice: startPrice,
       reservePrice: iReserveEl.value ? Number(iReserveEl.value) : null,
       location: iLocationEl.value.trim(),

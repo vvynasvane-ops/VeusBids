@@ -24,6 +24,7 @@
 import { db, collection, onSnapshot, query, where, doc, getDoc } from "./firebase-init.js";
 import { matchScore, hasPreferences } from "./recommend.js";
 import { setMessagesBadge } from "./nav.js";
+import { formatCurrency } from "./currency.js";
 
 const SESSION_KEY = "vb-session-start";
 const SEEN_KEY = "vb-seen-new-items";
@@ -243,13 +244,13 @@ export function watchForOutbid(uid) {
       sessionStorage.setItem(SEEN_OUTBID_KEY, JSON.stringify([...seen]));
 
       const name = data.title || "an item";
-      addNotification(uid, { title: `You've been outbid on ${name} — now at $${Number(data.currentBid).toLocaleString()}`, icon: "&#9889;", href: `item.html?id=${id}` });
+      addNotification(uid, { title: `You've been outbid on ${name} — now at ${formatCurrency(data.currentBid, data.currency)}`, icon: "&#9889;", href: `item.html?id=${id}` });
       showToast(`Outbid on ${name}!`, { type: "outbid", duration: 5000 });
 
       if ("Notification" in window && Notification.permission === "granted") {
         try {
           new Notification("VeusBid — you've been outbid", {
-            body: `Someone outbid you on ${name}. Current bid: $${Number(data.currentBid).toLocaleString()}.`,
+            body: `Someone outbid you on ${name}. Current bid: ${formatCurrency(data.currentBid, data.currency)}.`,
             icon: "icon-192.png"
           });
         } catch { /* some browsers restrict this */ }

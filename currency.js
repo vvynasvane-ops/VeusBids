@@ -6,7 +6,7 @@
 // field and read as USD, so old data keeps working.
 //
 // perUsd is a ROUGH reference rate (units of the currency per 1 USD). It is only used for "about"
-// conversions, cross-currency sorting/filtering and scaling bid steps - never to settle a bid.
+// conversions and cross-currency sorting/filtering - never to settle or change a bid.
 // Edit the numbers whenever you want fresher approximations.
 // ============================================================
 
@@ -101,25 +101,17 @@ export function toUsd(amount, from) {
   return Number(amount || 0) / getCurrency(from).perUsd;
 }
 
-// ---------------- bid steps ----------------
+// ---------------- bid amounts ----------------
 
-const NICE = [1, 2, 2.5, 5, 10];
+/** Smallest amount a bid can move by: 1 for zero-decimal currencies, else 0.01. */
+export function smallestUnit(code) {
+  return getCurrency(code).decimals === 0 ? 1 : 0.01;
+}
 
-/** USD keeps the original ladder exactly. Other currencies take that same step, scale it by the
- * rate (KSh 129 is roughly $1) and round to a friendly 1 / 2 / 2.5 / 5 x 10^n number. Zero-decimal
- * currencies never step below 1. */
-export function scaleIncrement(usdStep, code) {
-  const c = getCurrency(code);
-  if (c.code === "USD") return usdStep;
-  const raw = usdStep * c.perUsd;
-  const base = Math.pow(10, Math.floor(Math.log10(raw)));
-  const m = raw / base;
-  let best = NICE[0], bestDiff = Infinity;
-  for (const n of NICE) {
-    const d = Math.abs(Math.log(m / n));
-    if (d < bestDiff) { bestDiff = d; best = n; }
-  }
-  return Math.max(best * base, c.decimals === 0 ? 1 : 0.01);
+/** Round to the currency's own decimals so a typed 5000.004 can never be stored as such. */
+export function roundToCurrency(n, code) {
+  const d = getCurrency(code).decimals;
+  return Number(Number(n || 0).toFixed(d));
 }
 
 // ---------------- the viewer's own currency ----------------

@@ -324,7 +324,7 @@ New inputs built later (chat modals, the bid form) are guarded automatically.
 
 ## Multi-currency listings (matches the Android app)
 - Sellers pick a currency per listing (32 built in: KES, UGX, TZS, RWF, ETB, NGN, GHS, ZAR, EGP, USD, EUR, GBP, JPY, INR, AED... see `currency.js`). Stored as `currency` on the item; listings without it read as USD.
-- Every price on a listing (cards, item page, bids, bid history, outbid alerts, share text, calendar reminder) uses that currency. Bid steps scale per currency (KSh 500 / 1,000 / 2,500 instead of $5 / $10 / $25; USD unchanged). The stored bid is always exactly what the bidder typed.
+- Every price on a listing (cards, item page, bids, bid history, outbid alerts, share text, calendar reminder) uses that currency. There is no forced bid increment: any bid above the current bid is accepted, and the stored bid is exactly what the bidder typed. Bids are placed in a Firestore transaction.
 - The item page shows a flag plus an approximate price in the viewer's currency. Browse has a currency filter, and price sorting compares across currencies. "Recommended for you" converts prices before matching a saved price range.
 - Reference rates in `currency.js` (`perUsd`) are rough, display-only, and never decide a bid. Edit them whenever you like.
 - `firestore.rules`: the first bid may now equal the starting price (same fix as the Android app), later bids must exceed the current bid. Redeploy the rules for this to take effect: `firebase deploy --only firestore:rules`.

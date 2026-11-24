@@ -9,7 +9,7 @@ import {
 import {
   initializeFirestore, doc, setDoc, getDoc, updateDoc, deleteDoc, collection, getDocs,
   query, orderBy, limit, addDoc, onSnapshot, serverTimestamp, where,
-  arrayUnion, arrayRemove, increment
+  arrayUnion, arrayRemove, increment, runTransaction
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
@@ -31,7 +31,7 @@ export {
   deleteUser,
   doc, setDoc, getDoc, updateDoc, deleteDoc, collection, getDocs,
   query, orderBy, limit, addDoc, onSnapshot, serverTimestamp, where,
-  arrayUnion, arrayRemove, increment
+  arrayUnion, arrayRemove, increment, runTransaction
 };
 
 /** Redirects to index.html if nobody is signed in. Resolves with the user otherwise. */

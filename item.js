@@ -1,6 +1,6 @@
 import {
   requireAuth, db, auth, signOut, doc, getDoc, updateDoc, deleteDoc, addDoc, collection,
-  getDocs, query, orderBy, limit, onSnapshot, serverTimestamp, arrayUnion, arrayRemove, increment
+  getDocs, query, orderBy, limit, onSnapshot, serverTimestamp, arrayUnion, arrayRemove, increment, runTransaction
 } from "./firebase-init.js";
 import { openChat, closeChat } from "./chat.js";
 import { initTheme } from "./theme.js";
@@ -12,7 +12,7 @@ import {
 import { startPresence } from "./presence.js";
 import { showToast, initNotifications } from "./notifications.js";
 import { rememberViewed } from "./recent.js";
-import { getCurrency, flagOf, convertCurrency, preferredCurrency, scaleIncrement, toUsd } from "./currency.js";
+import { getCurrency, flagOf, convertCurrency, preferredCurrency, smallestUnit, roundToCurrency } from "./currency.js";
 
 initTheme();
 renderNav(""); // no single nav tab owns the item detail page
@@ -35,27 +35,13 @@ let me, myData, item, owner = {}, winner = {}, activeGallery = 0, bidsUnsub = nu
 let shellBuilt = false;
 let lastMessagingSignature = null;
 
-/** The bump required above the current price — bigger increments at higher
- * price points, same shape auction houses actually use, so a $6 bid can't
- * follow a $50,000 one. */
-function minIncrement(amount, code) {
-  // The ladder is judged on the USD-equivalent price, then scaled back into the listing's
-  // currency (KSh 500 / 1,000 / 2,500 instead of $5 / $10 / $25). USD is unchanged.
-  const usd = toUsd(amount, code);
-  let usdStep;
-  if (usd < 20) usdStep = 1;
-  else if (usd < 100) usdStep = 5;
-  else if (usd < 500) usdStep = 10;
-  else if (usd < 1000) usdStep = 25;
-  else if (usd < 5000) usdStep = 50;
-  else usdStep = 100;
-  return scaleIncrement(usdStep, code);
-}
 function minNextBid(it) {
+  // No forced increment: with bids on the board any amount strictly above the current bid is
+  // valid (the next smallest unit of the currency); with none yet, the starting price is valid.
   const current = it.currentBid || it.startingPrice || 0;
-  return it.bidCount ? current + minIncrement(current, it.currency) : current;
+  return it.bidCount ? roundToCurrency(current + smallestUnit(it.currency), it.currency) : current;
 }
-/** Smallest typed step for the bid box: whole units for zero-decimal currencies, cents otherwise. */
+/** Typed step for the bid box: whole units for zero-decimal currencies, any decimal otherwise. */
 function bidStep(it) {
   return getCurrency(it.currency).decimals === 0 ? 1 : "any";
 }
@@ -311,7 +297,7 @@ function updateAuctionPanel() {
         </p>
       ` : `
         <form id="bid-form" style="margin-top:14px;">
-          <label for="bid-amount">Your bid in ${item.currency} (min ${formatMoney(minNextBid(item), item.currency)})</label>
+          <label for="bid-amount">Your bid in ${item.currency} (${item.bidCount ? "anything above" : "min"} ${formatMoney(current, item.currency)})</label>
           <input id="bid-amount" type="number" min="${minNextBid(item)}" step="${bidStep(item)}" placeholder="${minNextBid(item)}">
           <button type="submit" class="btn block" style="margin-top:10px;">${item.bidCount ? "Place bid" : "Bid now — be the first"}</button>
         </form>
@@ -496,10 +482,13 @@ async function sendFeedback(text, btn, picker) {
 async function onPlaceBid(e) {
   e.preventDefault();
   const input = document.querySelector("#bid-amount");
-  const amount = Number(input.value);
+  // Stored exactly as typed (only trimmed to the currency's own decimals) - nothing is added.
+  const amount = roundToCurrency(Number(input.value), item.currency);
   const min = minNextBid(item);
-  if (!amount || amount < min) {
-    showToast(`Bid must be at least ${formatMoney(min, item.currency)}.`, { type: "error" });
+  if (!amount || amount < min - 1e-9) {
+    showToast(item.bidCount
+      ? `Your bid must be higher than the current bid of ${formatMoney(item.currentBid || item.startingPrice || 0, item.currency)}.`
+      : `Your bid must be at least ${formatMoney(min, item.currency)}.`, { type: "error" });
     return;
   }
   const submitBtn = e.target.querySelector("button[type=submit]");
@@ -513,22 +502,40 @@ async function onPlaceBid(e) {
     const extending = item.endTime && (item.endTime - now) < 2 * 60 * 1000;
     const newEndTime = extending ? now + 2 * 60 * 1000 : item.endTime;
 
-    await updateDoc(doc(db, "items", itemId), {
-      currentBid: amount,
-      currentBidderUid: me.uid,
-      currentBidderName: myData.name || "A bidder",
-      bidCount: increment(1),
-      everBidUids: arrayUnion(me.uid),
-      endTime: newEndTime
-    });
-    await addDoc(collection(db, "items", itemId, "bids"), {
-      bidderUid: me.uid, bidderName: myData.name || "A bidder", amount, at: serverTimestamp()
+    // One atomic transaction: re-read the live price, validate, then update the item AND log the
+    // bid together - so two bids landing at once can't both pass, and a stale page gets a clear
+    // "someone just bid" message instead of a generic failure.
+    const itemRef = doc(db, "items", itemId);
+    const bidRef = doc(collection(db, "items", itemId, "bids"));
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(itemRef);
+      if (!snap.exists()) throw new Error("This listing no longer exists.");
+      const cur = snap.data();
+      if (cur.endTime && cur.endTime <= Date.now()) throw new Error("This auction has just ended.");
+      if (cur.ownerUid === me.uid) throw new Error("You can't bid on your own listing.");
+      const liveMin = minNextBid({ ...cur, id: snap.id });
+      if (amount < liveMin - 1e-9) {
+        throw new Error(`Someone just bid \u2014 you now need to bid above ${formatMoney(cur.currentBid || cur.startingPrice || 0, cur.currency)}.`);
+      }
+      tx.update(itemRef, {
+        currentBid: amount,
+        currentBidderUid: me.uid,
+        currentBidderName: myData.name || "A bidder",
+        bidCount: (cur.bidCount || 0) + 1,
+        everBidUids: arrayUnion(me.uid),
+        endTime: newEndTime
+      });
+      tx.set(bidRef, { bidderUid: me.uid, bidderName: myData.name || "A bidder", amount, at: serverTimestamp() });
     });
     input.value = "";
     showToast(extending ? "Bid placed — auction extended 2 minutes!" : "Bid placed — you're the highest bidder.", { type: "success" });
   } catch (err) {
     console.error("Bid failed:", err);
-    showToast("Couldn't place that bid — try again.", { type: "error" });
+    const denied = err && (err.code === "permission-denied" || /permission/i.test(err.message || ""));
+    showToast(denied
+      ? "The server rejected that bid. Make sure the latest firestore.rules are published."
+      : (err && err.message && !/^Firebase|^FirebaseError/.test(err.message) ? err.message : "Couldn't place that bid — try again."),
+      { type: "error" });
   } finally {
     submitBtn.disabled = false;
   }
